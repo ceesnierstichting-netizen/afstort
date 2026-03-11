@@ -580,9 +580,12 @@ if (isset($_GET['action'])) {
     .admin-template-note {
       max-width: 900px;
       margin: 10px auto 0;
-      color: #7f1d1d;
+      background-color: #7f1d1d;
+      color: #fff;
       font-weight: 700;
       text-align: center;
+      padding: 10px 12px;
+      border-radius: 8px;
     }
 
     #emailTemplateContainer,
@@ -827,6 +830,14 @@ if (isset($_GET['action'])) {
     function isEmpty(v){ return v === null || v === undefined || String(v).trim() === ""; }
     function showIncompleteMsg(){ alert("Niet alle velden zijn ingevuld"); }
 
+    function normalizeChauffeurValue(value) {
+      const v = (value || "").trim();
+      if (!v || v === "-- Kies een chauffeur --" || v === "Kies een chauffeur") {
+        return "Chauffeur kiezen";
+      }
+      return v;
+    }
+
     // Controle voor "Zend bevestiging aan contactpersoon"
     function validateContactConfirmationRow(row){
       const required = [
@@ -1028,7 +1039,8 @@ if (isset($_GET['action'])) {
         .then(response => response.json())
         .then(data => {
           selects.forEach(select => {
-            const currentValue = select.getAttribute("data-selected") || "";
+            const currentValueRaw = select.getAttribute("data-selected") || "";
+            const currentValue = normalizeChauffeurValue(currentValueRaw);
             select.innerHTML = '<option value="Chauffeur kiezen">Chauffeur kiezen</option>';
             data.forEach(chauffeur => {
               if(chauffeur.naam !== 'Admin'){
@@ -1074,7 +1086,8 @@ if (isset($_GET['action'])) {
     
     function buildRitRow(rit = {}) {
       const tr = document.createElement("tr");
-      tr.setAttribute("data-chauffeur", rit.chauffeur ? rit.chauffeur : "Chauffeur kiezen");
+      const chauffeurValue = normalizeChauffeurValue(rit.chauffeur);
+      tr.setAttribute("data-chauffeur", chauffeurValue);
       tr.innerHTML = `
         <td>
           <input type="hidden" class="rowId" value="${rit.id ? rit.id : ''}">
@@ -1103,7 +1116,7 @@ if (isset($_GET['action'])) {
         <td>
           <div class="chauffeur-cell">
             <div class="chauffeur-select-wrapper">
-              <select data-field="chauffeur" data-selected="${rit.chauffeur ? rit.chauffeur : 'Chauffeur kiezen'}">
+              <select data-field="chauffeur" data-selected="${chauffeurValue}">
                 <option value="Chauffeur kiezen">Chauffeur kiezen</option>
               </select>
             </div>
