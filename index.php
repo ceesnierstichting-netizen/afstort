@@ -427,10 +427,11 @@ if (isset($_GET['action'])) {
     table td textarea {
       width: 100%;
       border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 12px;
-      margin: 6px 0;
-      font-size: 0.95rem;
+      border-radius: 3px;
+      padding: 2px 4px;
+      margin: 1px 0;
+      font-size: 0.86rem;
+      line-height: 1.2;
     }
 
     #chauffeur-section .form-grid {
@@ -444,7 +445,7 @@ if (isset($_GET['action'])) {
       border-collapse: collapse;
       background-color: #fff;
       table-layout: auto !important;
-      border-radius: 14px;
+      border-radius: 8px;
       overflow: hidden;
     }
 
@@ -455,10 +456,11 @@ if (isset($_GET['action'])) {
 
     table th,
     table td {
-      padding: 12px;
+      padding: 8px;
       text-align: left;
-      border: 1px solid #e5e7eb;
+      border: 1px solid #cfd8e3;
       vertical-align: top;
+      font-size: 0.92rem;
     }
 
     table th:nth-child(-n+5) {
@@ -474,12 +476,12 @@ if (isset($_GET['action'])) {
     button {
       background-color: var(--primary);
       color: #fff;
-      font-size: 0.95rem;
-      padding: 10px 16px;
+      font-size: 0.9rem;
+      padding: 8px 14px;
       border: none;
       cursor: pointer;
-      border-radius: 10px;
-      margin-top: 6px;
+      border-radius: 8px;
+      margin-top: 4px;
       font-weight: 600;
       transition: transform 0.12s ease, background-color 0.2s ease;
     }
@@ -504,9 +506,9 @@ if (isset($_GET['action'])) {
     .action-btn {
       background-color: var(--danger);
       color: #fff;
-      font-size: 0.75rem;
-      padding: 4px 8px;
-      border-radius: 6px;
+      font-size: 0.68rem;
+      padding: 2px 7px;
+      border-radius: 4px;
       margin-left: 5px;
     }
 
@@ -514,9 +516,9 @@ if (isset($_GET['action'])) {
       display: none;
       background-color: #ffd60a;
       color: #000;
-      font-size: 0.75rem;
-      padding: 4px 8px;
-      border-radius: 6px;
+      font-size: 0.68rem;
+      padding: 2px 7px;
+      border-radius: 4px;
       margin-left: 5px;
     }
 
@@ -537,6 +539,21 @@ if (isset($_GET['action'])) {
       overflow-x: auto;
       margin-top: 12px;
     }
+
+    table td input[type="date"],
+    table td input[type="time"],
+    table td input[type="number"],
+    table td input[type="email"],
+    table td input[type="text"],
+    table td select {
+      min-height: 22px;
+    }
+
+    table td input::placeholder {
+      color: #6b7280;
+      opacity: 1;
+    }
+
 
     #intro-text p {
       font-weight: 700;
