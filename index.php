@@ -201,16 +201,14 @@ if (isset($_GET['action'])) {
             ':lat'        => $lat,
             ':lon'        => $lon
         ])) {
-            $_POST = [
+            require_once 'sendBevestigingInlog.php';
+            $mailResponse = sendBevestigingInlogMail([
                 'email'      => $email,
                 'naam'       => $naam,
-                'wachtwoord' => $wachtwoord,
+                'wachtwoord' => $wachtwoordInput,
                 'IBAN'       => $iban
-            ];
-            ob_start();
-            include 'sendBevestigingInlog.php';
-            $mailResponse = ob_get_clean();
-            error_log("Internal mail response: " . $mailResponse);
+            ]);
+            error_log("Internal mail response: " . json_encode($mailResponse));
             echo "Chauffeur toegevoegd.";
         } else {
             echo "Fout bij toevoegen chauffeur.";
