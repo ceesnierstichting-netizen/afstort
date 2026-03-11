@@ -68,8 +68,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .logo {
             width: 90px;
             height: 90px;
-            border-radius: 14px;
-            box-shadow: 0 10px 18px rgba(0, 0, 0, 0.12);
+            border-radius: 0;
+            box-shadow: none;
             margin-bottom: 20px;
         }
 
@@ -198,7 +198,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <main class="page">
         <img src="logohome.png" alt="Logo" class="logo">
         <div class="header-title">
-            <h1>Afhaalopdrachten</h1>
+            <h1>Afstortverzoeken</h1>
             <h2>Inloggen op het dashboard</h2>
         </div>
         <div class="login-container">
