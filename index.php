@@ -334,423 +334,456 @@ if (isset($_GET['action'])) {
   <link rel="icon" type="image/png" href="favicon.png"> 
  <title>Geldtransport Overzicht</title>
   <style>
-    /* Responsive input resizing */
-    table td input, table td select, table td textarea {
-        width: 100% !important;
-        min-width: 160px;
-        overflow: visible;
-        white-space: normal;
+    :root {
+      --primary: #c8102e;
+      --primary-dark: #a00e26;
+      --surface: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #d1d5db;
+      --shadow: 0 16px 45px rgba(17, 24, 39, 0.12);
+      --success: #15803d;
+      --danger: #b91c1c;
+      --warning: #f4d03f;
     }
 
-    table {
-        table-layout: auto !important;
-    }
-
-    td {
-        max-width: 500px;
-        white-space: normal !important;
+    * {
+      box-sizing: border-box;
     }
 
     body {
-      background: url('logohome.png') no-repeat 25px 25px;
-      background-size: 125px 125px;
-      font-family: Arial, sans-serif;
-      background-color: #f8f5f0;
-      margin: 20px;
+      margin: 0;
+      padding: 24px;
+      min-height: 100vh;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--text);
+      background: linear-gradient(145deg, #fff7f8 0%, #f6f7fb 100%);
     }
-    .logout {
-      text-align: right;
-      margin-bottom: 10px;
+
+    .page-shell {
+      max-width: 1320px;
+      margin: 0 auto;
     }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-weight: 700;
+      color: var(--primary-dark);
+    }
+
+    .brand img {
+      width: 58px;
+      height: 58px;
+      border-radius: 12px;
+      box-shadow: 0 8px 18px rgba(17, 24, 39, 0.16);
+    }
+
     .logout a {
       text-decoration: none;
-      color: #c8102e;
-      font-weight: bold;
+      color: var(--primary-dark);
+      font-weight: 700;
     }
+
     h1 {
-      color: #c8102e;
+      color: var(--primary-dark);
       text-align: center;
+      margin: 0 0 22px;
+      font-size: clamp(1.7rem, 2.5vw, 2.3rem);
     }
-    table {
-      border-collapse: collapse;
+
+    .card {
+      background: var(--surface);
+      border: 1px solid #eceff3;
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 20px;
+      margin-bottom: 18px;
+    }
+
+    .stack-title {
+      margin: 0 0 12px;
+      color: #111827;
+    }
+
+    #chauffeurList {
+      margin-top: 0;
+      padding-left: 20px;
+    }
+
+    #chauffeur-section input,
+    textarea,
+    table td input,
+    table td select,
+    table td textarea {
       width: 100%;
-      background-color: #fff;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
-      border-radius: 5px;
-      margin-top: 20px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin: 6px 0;
+      font-size: 0.95rem;
     }
-    table th, table td {
+
+    #chauffeur-section .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 10px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background-color: #fff;
+      table-layout: auto !important;
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    td {
+      max-width: 500px;
+      white-space: normal !important;
+    }
+
+    table th,
+    table td {
       padding: 12px;
       text-align: left;
-      border: 1px solid #ddd;
+      border: 1px solid #e5e7eb;
       vertical-align: top;
     }
-    table th:nth-child(1) {
-      background-color: #7a7a7a;
+
+    table th:nth-child(-n+5) {
+      background-color: #6b7280;
       color: #fff;
-      width: 50px;
     }
-    table th:nth-child(2) {
-      background-color: #7a7a7a;
-      color: #fff;
-      width: 250px;
-    }
-    table th:nth-child(3),
-    table th:nth-child(4),
-    table th:nth-child(5) {
-      background-color: #7a7a7a;
-      color: #fff;
-      width: 150px;
-    }
+
     table th:nth-child(n+6) {
-      background-color: #f4d03f;
-      color: #000;
-      width: 150px;
+      background-color: var(--warning);
+      color: #111827;
     }
-    table th:last-child {
-      background-color: #f4d03f;
-      color: #000;
-    }
+
     button {
-      background-color: #c8102e;
+      background-color: var(--primary);
       color: #fff;
-      font-size: 16px;
-      padding: 10px 20px;
+      font-size: 0.95rem;
+      padding: 10px 16px;
       border: none;
       cursor: pointer;
-      border-radius: 5px;
-      margin-top: 5px;
+      border-radius: 10px;
+      margin-top: 6px;
+      font-weight: 600;
+      transition: transform 0.12s ease, background-color 0.2s ease;
     }
+
     button:hover {
-      background-color: #a00e26;
+      background-color: var(--primary-dark);
+      transform: translateY(-1px);
     }
+
     .delete-button {
-      background-color: #28a7a7a;
-      color: #fff;
+      background-color: var(--danger);
       padding: 5px 10px;
-      border: none;
-      cursor: pointer;
-      border-radius: 5px;
-      font-size: 14px;
+      font-size: 0.85rem;
     }
+
     .delete-button:disabled {
       background-color: #ccc;
       cursor: not-allowed;
     }
-    table td input, table td select {
-      margin: 2px;
-      width: calc(100% - 4px);
-      box-sizing: border-box;
+
+    .send-email-btn,
+    .action-btn {
+      background-color: var(--danger);
+      color: #fff;
+      font-size: 0.75rem;
+      padding: 4px 8px;
+      border-radius: 6px;
+      margin-left: 5px;
     }
-    .no-spinner::-webkit-inner-spin-button,
-    .no-spinner::-webkit-outer-spin-button {
-      -webkit-appearance: none;
-      margin: 0;
+
+    .send-email-test-btn {
+      display: none;
+      background-color: #ffd60a;
+      color: #000;
+      font-size: 0.75rem;
+      padding: 4px 8px;
+      border-radius: 6px;
+      margin-left: 5px;
     }
-    .no-spinner {
-      -moz-appearance: textfield;
+
+    .chauffeur-cell,
+    .button-container {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 100%;
     }
-    table td input.email-short {
-      width: calc(100% - 4px);
-      display: inline-block;
-      vertical-align: middle;
+
+    .chauffeur-select-wrapper {
+      display: flex;
+      align-items: flex-start;
     }
-    <?php if ($fullAccess): ?>
-    #chauffeur-section {
-      margin-bottom: 20px;
+
+    .table-container {
+      overflow-x: auto;
+      margin-top: 12px;
     }
-    #emailTemplateContainer, 
+
+    #intro-text p {
+      font-weight: 700;
+      color: var(--primary-dark);
+      margin-top: 0;
+    }
+
+    #intro-text ol {
+      margin-top: 10px;
+      line-height: 1.45;
+    }
+
+    .intro-video {
+      color: var(--primary-dark);
+      text-decoration: underline;
+      font-weight: 600;
+    }
+
+    .button-row {
+      text-align: center;
+      margin-top: 18px;
+    }
+
+    #emailTemplateContainer,
     #emailTemplateContainer3,
     #emailTemplateContainer4,
     #emailTemplateContainer5,
     #emailTemplateContainer6 {
-      width: 50%;
+      max-width: 900px;
       margin: 20px auto;
-      border: 1px solid #ddd;
-      padding: 10px;
     }
+
     #emailTemplateContainer hr,
     #emailTemplateContainer3 hr,
     #emailTemplateContainer4 hr,
     #emailTemplateContainer5 hr,
     #emailTemplateContainer6 hr {
       border: 0;
-      border-top: 1px solid #7a7a7a;
+      border-top: 1px solid #e5e7eb;
       margin-bottom: 10px;
     }
-    #emailTemplateContainer h3,
-    #emailTemplateContainer3 h3,
-    #emailTemplateContainer4 h3,
-    #emailTemplateContainer5 h3,
-    #emailTemplateContainer6 h3 {
-      margin: 0;
-      text-align: center;
-    }
+
     textarea {
-      width: 100%;
-      height: 240px;
-      padding: 5px;
-      font-size: 14px;
-    }
-    <?php endif; ?>
-    .send-email-btn {
-      background-color: red;
-      color: #fff;
-      font-size: 10px;
-      padding: 2px 5px;
-      border: none;
-      border-radius: 3px;
-      cursor: pointer;
-      margin-left: 5px;
-    }
-    .send-email-test-btn {
-      display: none;
-      background-color: #ffd60a;
-      color: #000;
-      font-size: 10px;
-      padding: 2px 5px;
-      border: none;
-      border-radius: 3px;
-      cursor: pointer;
-      margin-left: 5px;
+      min-height: 220px;
+      resize: vertical;
     }
 
-    .chauffeur-cell {
-      display: flex;
-      flex-direction: column;
-    }
-    .chauffeur-select-wrapper {
-      display: flex;
-      align-items: flex-start;
-    }
-    .button-container {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-      width: 100%;
-    }
-    .action-btn {
-      background-color: red;
-      color: #fff;
-      font-size: 10px;
-      padding: 2px 5px;
-      border: none;
-      border-radius: 3px;
-      cursor: pointer;
-    }
-    #sendEmailOverlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0,0,0,0.8);
-      z-index: 1500;
-      align-items: center;
-      justify-content: center;
-    }
-    #sendEmailOverlay .overlayContent {
-      background: #fff;
-      padding: 20px;
-      border-radius: 5px;
-      width: 80%;
-      max-width: 800px;
-      height: 80%;
-      position: relative;
-    }
-    #sendEmailOverlay .closeOverlay {
-      position: absolute;
-      top: 10px;
-      right: 20px;
-      font-size: 20px;
-      font-weight: bold;
-      cursor: pointer;
-    }
-    #sendEmailOverlay .closeOverlay:before {
-      content: "\00d7";
-    }
-    #sendEmailOverlay iframe {
-      width: 100%;
-      height: calc(100% - 40px);
-      border: none;
-    }
+    #sendEmailOverlay,
     #confirmRitModal {
       display: none;
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0,0,0,0.8);
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
       z-index: 2000;
       align-items: center;
       justify-content: center;
     }
+
+    #sendEmailOverlay .overlayContent,
     #confirmRitModal .modalContent {
       background: #fff;
+      border-radius: 12px;
       padding: 20px;
-      border-radius: 5px;
-      width: 90%;
-      max-width: 500px;
-      text-align: center;
+      width: min(92vw, 860px);
+      position: relative;
     }
-    #confirmRitModal button {
-      margin: 10px;
+
+    #sendEmailOverlay .overlayContent {
+      height: min(85vh, 760px);
     }
+
+    #sendEmailOverlay .closeOverlay {
+      position: absolute;
+      top: 10px;
+      right: 16px;
+      font-size: 24px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    #sendEmailOverlay .closeOverlay:before {
+      content: "\00d7";
+    }
+
+    #sendEmailOverlay iframe {
+      width: 100%;
+      height: calc(100% - 30px);
+      border: none;
+      border-radius: 8px;
+    }
+
+    #confirmRitBtn { background-color: var(--success); }
+    #cancelRitBtn { background-color: var(--danger); }
+
     #notification {
       position: fixed;
-      top: 20px;
-      right: 20px;
-      background-color: #c8102e;
+      top: 18px;
+      right: 18px;
+      background-color: var(--primary);
       color: #fff;
-      font-family: Arial, sans-serif;
-      font-size: 20px;
-      padding: 10px 20px;
-      border-radius: 5px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      font-size: 1rem;
+      padding: 10px 16px;
+      border-radius: 10px;
+      box-shadow: 0 8px 20px rgba(17, 24, 39, 0.25);
       display: none;
       z-index: 3000;
     }
-    #intro-text {
-      width: 90%;
-      max-width: 800px;
-      margin: 20px auto;
-      background-color: #fff;
-      border: 1px solid #ddd;
-      padding: 15px;
-      border-radius: 5px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+
+    .no-spinner::-webkit-inner-spin-button,
+    .no-spinner::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
     }
-    #intro-text p {
-      font-weight: bold;
-      color: #c8102e;
+
+    .no-spinner {
+      -moz-appearance: textfield;
     }
-    #intro-text ol {
-      margin-top: 10px;
+
+    @media (max-width: 900px) {
+      body { padding: 14px; }
+      .card { padding: 14px; }
+      .topbar { flex-wrap: wrap; }
     }
   </style>
 </head>
-<body> 
-  <div class="logout"><a href="logout.php">Uitloggen</a></div>
-  <div id="notification"></div>
-  <h1>Dashboard afhaalopdrachten 2025</h1>
-  <div style="height: 25px;"></div>
-  <?php if ($fullAccess): ?>
-  <div id="chauffeur-section">
-    <h2>Chauffeurs</h2>
-    <ul id="chauffeurList"></ul>
-    <input type="text" id="newChauffeur" placeholder="Naam">
-    <input type="text" id="newChauffeurPostcode" placeholder="Postcode">
-    <input type="email" id="newChauffeurEmail" placeholder="E-mail">
-    <input type="text" id="newChauffeurIBAN" placeholder="IBAN">
-    <input type="password" id="newChauffeurPassword" placeholder="Wachtwoord (8k/1getal/1leesteken)">
-    <button onclick="addChauffeur()">Toevoegen</button>
-  </div>
-  <?php endif; ?>
-  
-  <hr>
-  
-  <!-- Instructies voor de ritten -->
-  <div id="intro-text">
-
-
-<p><strong>Verklaring van regelkleuren: <br></strong></p>
-<span>Wit = Niet toegewezen aan een chauffeur<br></span>
-Rood = Toegewezen maar niet afgehandeld<br>
-Groen = Afgehandeld.
-
-
-
-    <ol>
-      <i><b>De kolommen met de gele koppen kan jij als chauffeur aanpassen.</b></i>
-      <li>Neem telefonisch contact op met de contactpersoon voor een afspraak.</li>
-      <li>Noteer afhaaldatum en -tijd in de rittenlijst hieronder.</li>
-      <li>Selecteer in de kolom 'Chauffeur' jouw naam voor de rit.</li>
-      <li>Gebruik 'Bevestig deze rit' voor het versturen van een bevestigingsmail aan de contactpersoon en jezelf.</li>
-      <li>Haal de collecte-opbrengst op en onderteken samen met de contactpersoon het afhaalbewijs.</li>
-      <li>Stort munt- en/of briefgeld bij Geldmaat.</li>
-      <li>Vul na afloop het 'Gestort munt bedrag' en 'Gereden kilometers' in.</li>
-      <li>Stel de status van de rit op 'Afgehandeld' als de storting gereed is. Het e-mailscherm opent, hier kun je een foto van de transactiebonnen als bijlage opnemen. Verzend de e-mail, deze rit is nu afgehandeld.</li>
-      <li>De rode knop 'Rapport' aan de onderzijde geeft je een overzicht van al jouw ritten met de status 'Afgehandeld'. Hier vind je ook jouw gereden kilometers, incl. het te declareren bedrag. Voor de declaratie hoef je zelf <u>geen</u> actie te ondernemen, wij handelen dit verder af.</li>
-    </ol>
-
-<a href="https://vimeo.com/1112880116" target="_blank" style="color: red; text-decoration: underline;">Voor een visuele uitleg, bekijk deze video.</a><br>
- 
- </div>
-  
-  <section id="transport-overzicht">
-    <h2>Ritten-overzicht</h2>
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th></th>
-            <th>Gegevens contactpersoon</th>
-            <th>Voorkeur afhaaldag</th>
-            <th>Verwacht totaal-bedrag</th>
-            <th>Soort</th>
-            <th>Chauffeur</th>
-            <th>Afhaaldatum</th>
-            <th>Afhaaltijd</th>
-            <th>Gestort munt bedrag</th>
-            <th>Gereden kilometers</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="tableBody"></tbody>
-      </table>
+<body>
+  <div class="page-shell">
+    <div class="topbar">
+      <div class="brand">
+        <img src="logohome.png" alt="Logo">
+        <span>Afhaalopdrachten</span>
+      </div>
+      <div class="logout"><a href="logout.php">Uitloggen</a></div>
     </div>
+
+    <div id="notification"></div>
+    <h1>Dashboard afhaalopdrachten 2025</h1>
+
     <?php if ($fullAccess): ?>
-    <button id="add-rit-button" onclick="addRow()">Nieuwe rit toevoegen</button>
+    <section id="chauffeur-section" class="card">
+      <h2 class="stack-title">Chauffeurs</h2>
+      <ul id="chauffeurList"></ul>
+      <div class="form-grid">
+        <input type="text" id="newChauffeur" placeholder="Naam">
+        <input type="text" id="newChauffeurPostcode" placeholder="Postcode">
+        <input type="email" id="newChauffeurEmail" placeholder="E-mail">
+        <input type="text" id="newChauffeurIBAN" placeholder="IBAN">
+        <input type="password" id="newChauffeurPassword" placeholder="Wachtwoord (8k/1getal/1leesteken)">
+      </div>
+      <button onclick="addChauffeur()">Toevoegen</button>
+    </section>
     <?php endif; ?>
-  </section>
-  
-  <!-- Rapportknop -->
-  <div style="text-align: center; margin-top: 20px;">
-    <button id="rapport-button" onclick="openRapport()">Rapport</button>
+
+    <section id="intro-text" class="card">
+      <p><strong>Verklaring van regelkleuren:</strong></p>
+      <span>Wit = Niet toegewezen aan een chauffeur<br></span>
+      Rood = Toegewezen maar niet afgehandeld<br>
+      Groen = Afgehandeld.
+
+      <ol>
+        <i><b>De kolommen met de gele koppen kan jij als chauffeur aanpassen.</b></i>
+        <li>Neem telefonisch contact op met de contactpersoon voor een afspraak.</li>
+        <li>Noteer afhaaldatum en -tijd in de rittenlijst hieronder.</li>
+        <li>Selecteer in de kolom 'Chauffeur' jouw naam voor de rit.</li>
+        <li>Gebruik 'Bevestig deze rit' voor het versturen van een bevestigingsmail aan de contactpersoon en jezelf.</li>
+        <li>Haal de collecte-opbrengst op en onderteken samen met de contactpersoon het afhaalbewijs.</li>
+        <li>Stort munt- en/of briefgeld bij Geldmaat.</li>
+        <li>Vul na afloop het 'Gestort munt bedrag' en 'Gereden kilometers' in.</li>
+        <li>Stel de status van de rit op 'Afgehandeld' als de storting gereed is. Het e-mailscherm opent, hier kun je een foto van de transactiebonnen als bijlage opnemen. Verzend de e-mail, deze rit is nu afgehandeld.</li>
+        <li>De rode knop 'Rapport' aan de onderzijde geeft je een overzicht van al jouw ritten met de status 'Afgehandeld'. Hier vind je ook jouw gereden kilometers, incl. het te declareren bedrag. Voor de declaratie hoef je zelf <u>geen</u> actie te ondernemen, wij handelen dit verder af.</li>
+      </ol>
+
+      <a class="intro-video" href="https://vimeo.com/1112880116" target="_blank" rel="noopener noreferrer">Voor een visuele uitleg, bekijk deze video.</a>
+    </section>
+
+    <section id="transport-overzicht" class="card">
+      <h2 class="stack-title">Ritten-overzicht</h2>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Gegevens contactpersoon</th>
+              <th>Voorkeur afhaaldag</th>
+              <th>Verwacht totaal-bedrag</th>
+              <th>Soort</th>
+              <th>Chauffeur</th>
+              <th>Afhaaldatum</th>
+              <th>Afhaaltijd</th>
+              <th>Gestort munt bedrag</th>
+              <th>Gereden kilometers</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+      <?php if ($fullAccess): ?>
+      <button id="add-rit-button" onclick="addRow()">Nieuwe rit toevoegen</button>
+      <?php endif; ?>
+    </section>
+
+    <div class="button-row">
+      <button id="rapport-button" onclick="openRapport()">Rapport</button>
+    </div>
+
+    <?php if ($fullAccess): ?>
+    <div id="emailTemplateContainer" class="card">
+      <hr>
+      <h3>1e bevestiging</h3>
+      <textarea id="emailTemplate"></textarea>
+    </div>
+    <div id="emailTemplateContainer3" class="card">
+      <hr>
+      <h3>Ophaalbevestiging chauffeur</h3>
+      <textarea id="emailTemplate3"></textarea>
+    </div>
+    <div id="emailTemplateContainer4" class="card">
+      <hr>
+      <h3>Ophaalbevestiging contact</h3>
+      <textarea id="emailTemplate4"></textarea>
+    </div>
+    <div id="emailTemplateContainer5" class="card">
+      <hr>
+      <h3>Afronding</h3>
+      <textarea id="emailTemplate5"></textarea>
+    </div>
+    <div id="emailTemplateContainer6" class="card">
+      <hr>
+      <h3>Afronding WCO</h3>
+      <textarea id="emailTemplate6"></textarea>
+    </div>
+    <?php endif; ?>
   </div>
-  
-  <?php if ($fullAccess): ?>
-  <div id="emailTemplateContainer">
-    <hr>
-    <h3>1e bevestiging</h3>
-    <textarea id="emailTemplate"></textarea>
-  </div>
-  <div id="emailTemplateContainer3">
-    <hr>
-    <h3>Ophaalbevestiging chauffeur</h3>
-    <textarea id="emailTemplate3"></textarea>
-  </div>
-  <div id="emailTemplateContainer4">
-    <hr>
-    <h3>Ophaalbevestiging contact</h3>
-    <textarea id="emailTemplate4"></textarea>
-  </div>
-  <div id="emailTemplateContainer5">
-    <hr>
-    <h3>Afronding</h3>
-    <textarea id="emailTemplate5"></textarea>
-  </div>
-  <div id="emailTemplateContainer6">
-    <hr>
-    <h3>Afronding WCO</h3>
-    <textarea id="emailTemplate6"></textarea>
-  </div>
-  <?php endif; ?>
-  
+
   <div id="sendEmailOverlay">
     <div class="overlayContent">
       <span class="closeOverlay" onclick="closeSendEmailOverlay()"></span>
       <iframe id="sendEmailIframe" src=""></iframe>
     </div>
   </div>
-  
+
   <div id="confirmRitModal">
     <div class="modalContent">
       <p id="confirmRitMessage"></p>
-      <button id="confirmRitBtn" style="background-color: green; color: white;">Bevestig</button>
-      <button id="cancelRitBtn" style="background-color: red; color: white;">Annuleer</button>
+      <button id="confirmRitBtn">Bevestig</button>
+      <button id="cancelRitBtn">Annuleer</button>
     </div>
   </div>
   
