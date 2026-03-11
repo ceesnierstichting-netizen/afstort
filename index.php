@@ -32,7 +32,7 @@ if (isset($_GET['action'])) {
     if ($action === 'loadRitten') {
         header('Content-Type: application/json');
         if ($username !== 'Admin') {
-            $stmt = $pdo->prepare("SELECT * FROM ritten WHERE chauffeur = :username OR chauffeur = '' OR chauffeur IS NULL OR chauffeur = '-- Kies een chauffeur --'");
+            $stmt = $pdo->prepare("SELECT * FROM ritten WHERE chauffeur = :username OR chauffeur = '' OR chauffeur IS NULL OR chauffeur = 'Chauffeur kiezen' OR chauffeur = '-- Kies een chauffeur --'");
             $stmt->execute([':username' => $username]);
         } else {
             $stmt = $pdo->prepare("SELECT * FROM ritten");
@@ -382,8 +382,8 @@ if (isset($_GET['action'])) {
     }
 
     .brand img {
-      width: 58px;
-      height: 58px;
+      width: 87px;
+      height: 87px;
       border-radius: 0;
       box-shadow: none;
     }
@@ -578,6 +578,15 @@ if (isset($_GET['action'])) {
       margin-top: 18px;
     }
 
+
+    .admin-template-note {
+      max-width: 900px;
+      margin: 10px auto 0;
+      color: #7f1d1d;
+      font-weight: 700;
+      text-align: center;
+    }
+
     #emailTemplateContainer,
     #emailTemplateContainer3,
     #emailTemplateContainer4,
@@ -685,13 +694,12 @@ if (isset($_GET['action'])) {
     <div class="topbar">
       <div class="brand">
         <img src="logohome.png" alt="Logo">
-        <span>Afhaalopdrachten</span>
       </div>
       <div class="logout"><a href="logout.php">Uitloggen</a></div>
     </div>
 
     <div id="notification"></div>
-    <h1>Dashboard afhaalopdrachten 2026</h1>
+    <h1>Afstortverzoeken 2026</h1>
 
     <?php if ($fullAccess): ?>
     <section id="chauffeur-section" class="card">
@@ -761,6 +769,7 @@ if (isset($_GET['action'])) {
     </div>
 
     <?php if ($fullAccess): ?>
+    <div class="admin-template-note">Onderstaande teksten dienen als voorbeeld, deze kunnen hier niet worden aangepast.</div>
     <div id="emailTemplateContainer" class="card">
       <hr>
       <h3>1e bevestiging</h3>
@@ -845,7 +854,7 @@ if (isset($_GET['action'])) {
       const chauffeur = row.querySelector("select[data-field='chauffeur']");
       const afhaalmoment = row.querySelector("input[data-field='afhaalmoment']");
       const afhaaltijd = row.querySelector("input[data-field='afhaaltijd']");
-      if (!chauffeur || chauffeur.value === "-- Kies een chauffeur --") return false;
+      if (!chauffeur || chauffeur.value === "Chauffeur kiezen") return false;
       if (!afhaalmoment || isEmpty(afhaalmoment.value)) return false;
       if (!afhaaltijd || isEmpty(afhaaltijd.value)) return false;
       return true;
@@ -863,7 +872,7 @@ if (isset($_GET['action'])) {
         const chauffeur = chauffeurSelect.value;
         const gestort = gestortInput.value.trim();
         const gereden = geredenInput.value.trim();
-        if(chauffeur !== "-- Kies een chauffeur --" && gestort !== "" && gereden !== "") {
+        if(chauffeur !== "Chauffeur kiezen" && gestort !== "" && gereden !== "") {
           statusSelect.disabled = false;
         } else {
           statusSelect.disabled = true;
@@ -1022,7 +1031,7 @@ if (isset($_GET['action'])) {
         .then(data => {
           selects.forEach(select => {
             const currentValue = select.getAttribute("data-selected") || "";
-            select.innerHTML = '<option value="-- Kies een chauffeur --">-- Kies een chauffeur --</option>';
+            select.innerHTML = '<option value="Chauffeur kiezen">Chauffeur kiezen</option>';
             data.forEach(chauffeur => {
               if(chauffeur.naam !== 'Admin'){
                 const option = document.createElement("option");
@@ -1032,7 +1041,7 @@ if (isset($_GET['action'])) {
                 select.appendChild(option);
               }
             });
-            if (currentValue && currentValue !== "-- Kies een chauffeur --") {
+            if (currentValue && currentValue !== "Chauffeur kiezen") {
               select.value = currentValue;
             }
             select.addEventListener("change", function() {
@@ -1067,13 +1076,13 @@ if (isset($_GET['action'])) {
     
     function buildRitRow(rit = {}) {
       const tr = document.createElement("tr");
-      tr.setAttribute("data-chauffeur", rit.chauffeur ? rit.chauffeur : "-- Kies een chauffeur --");
+      tr.setAttribute("data-chauffeur", rit.chauffeur ? rit.chauffeur : "Chauffeur kiezen");
       tr.innerHTML = `
         <td>
           <input type="hidden" class="rowId" value="${rit.id ? rit.id : ''}">
           <div style="display: flex;">
-            <input type="text" placeholder="Collectegebied" value="${rit.collectegebied || ''}" ${ fullAccess ? '' : 'disabled'} data-field="collectegebied" style="flex:1;">
-            <input type="text" placeholder="0001234" value="${rit.gebiedsnummer || ''}" ${ fullAccess ? '' : 'disabled'} data-field="gebiedsnummer" maxlength="9" style="width: 9ch; margin-left:2px;">
+            <input type="text" placeholder="Collectegebied" value="${rit.collectegebied || ''}" ${ fullAccess ? '' : 'disabled'} data-field="collectegebied" style="flex:0.85 1 auto;">
+            <input type="text" placeholder="0001234" value="${rit.gebiedsnummer || ''}" ${ fullAccess ? '' : 'disabled'} data-field="gebiedsnummer" maxlength="8" style="width: 8.6ch; margin-left:2px; text-align:right;">
           </div>
           <input type="text" placeholder="Wijknaam (n.v.t. bij heel gebied)" value="${rit.wijknaam || ''}" ${ fullAccess ? '' : 'disabled'} data-field="wijknaam">
           <br>
@@ -1096,8 +1105,8 @@ if (isset($_GET['action'])) {
         <td>
           <div class="chauffeur-cell">
             <div class="chauffeur-select-wrapper">
-              <select data-field="chauffeur" data-selected="${rit.chauffeur ? rit.chauffeur : '-- Kies een chauffeur --'}">
-                <option value="-- Kies een chauffeur --">-- Kies een chauffeur --</option>
+              <select data-field="chauffeur" data-selected="${rit.chauffeur ? rit.chauffeur : 'Chauffeur kiezen'}">
+                <option value="Chauffeur kiezen">Chauffeur kiezen</option>
               </select>
             </div>
             <div class="button-container">
@@ -1378,7 +1387,7 @@ if (isset($_GET['action'])) {
          row.querySelectorAll(yellowSelectors).forEach(field => { field.disabled = true; });
       } else {
          const chauffeurSelect = row.querySelector("select[data-field='chauffeur']");
-         if (chauffeurSelect && chauffeurSelect.value && chauffeurSelect.value !== "-- Kies een chauffeur --") {
+         if (chauffeurSelect && chauffeurSelect.value && chauffeurSelect.value !== "Chauffeur kiezen") {
              row.style.backgroundColor = "#ffcccc";
              const yellowSelectors = "select[data-field='chauffeur'], input[data-field='afhaalmoment'], input[data-field='afhaaltijd'], input[data-field='gestort'], input[data-field='gereden']";
              row.querySelectorAll(yellowSelectors).forEach(field => { field.disabled = false; });
