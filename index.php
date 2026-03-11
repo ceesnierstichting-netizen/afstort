@@ -384,8 +384,8 @@ if (isset($_GET['action'])) {
     .brand img {
       width: 58px;
       height: 58px;
-      border-radius: 12px;
-      box-shadow: 0 8px 18px rgba(17, 24, 39, 0.16);
+      border-radius: 0;
+      box-shadow: none;
     }
 
     .logout a {
@@ -427,7 +427,7 @@ if (isset($_GET['action'])) {
     table td textarea {
       width: 100%;
       border: 1px solid var(--border);
-      border-radius: 3px;
+      border-radius: 4px;
       padding: 2px 4px;
       margin: 1px 0;
       font-size: 0.86rem;
@@ -463,12 +463,12 @@ if (isset($_GET['action'])) {
       font-size: 0.92rem;
     }
 
-    table th:nth-child(-n+5) {
+    table th:nth-child(-n+4) {
       background-color: #6b7280;
       color: #fff;
     }
 
-    table th:nth-child(n+6) {
+    table th:nth-child(n+5) {
       background-color: var(--warning);
       color: #111827;
     }
@@ -492,9 +492,10 @@ if (isset($_GET['action'])) {
     }
 
     .delete-button {
-      background-color: var(--danger);
-      padding: 5px 10px;
-      font-size: 0.85rem;
+      background-color: #9f1239;
+      padding: 2px 7px;
+      font-size: 0.68rem;
+      border-radius: 4px;
     }
 
     .delete-button:disabled {
@@ -690,7 +691,7 @@ if (isset($_GET['action'])) {
     </div>
 
     <div id="notification"></div>
-    <h1>Dashboard afhaalopdrachten 2025</h1>
+    <h1>Dashboard afhaalopdrachten 2026</h1>
 
     <?php if ($fullAccess): ?>
     <section id="chauffeur-section" class="card">
@@ -735,7 +736,6 @@ if (isset($_GET['action'])) {
         <table>
           <thead>
             <tr>
-              <th></th>
               <th>Gegevens contactpersoon</th>
               <th>Voorkeur afhaaldag</th>
               <th>Verwacht totaal-bedrag</th>
@@ -1054,7 +1054,7 @@ if (isset($_GET['action'])) {
           const tableBody = document.getElementById("tableBody");
           tableBody.innerHTML = "";
           if (!data || data.length === 0) {
-            tableBody.innerHTML = "<tr><td colspan='11'>Geen ritten gevonden.</td></tr>";
+            tableBody.innerHTML = "<tr><td colspan='10'>Geen ritten gevonden.</td></tr>";
           } else {
             data.forEach(rit => {
               tableBody.appendChild(buildRitRow(rit));
@@ -1069,8 +1069,8 @@ if (isset($_GET['action'])) {
       const tr = document.createElement("tr");
       tr.setAttribute("data-chauffeur", rit.chauffeur ? rit.chauffeur : "-- Kies een chauffeur --");
       tr.innerHTML = `
-        <td>${ fullAccess ? '<button class="delete-button" onclick="deleteRow(this)">x</button>' : '' }<input type="hidden" class="rowId" value="${rit.id ? rit.id : ''}"></td>
         <td>
+          <input type="hidden" class="rowId" value="${rit.id ? rit.id : ''}">
           <div style="display: flex;">
             <input type="text" placeholder="Collectegebied" value="${rit.collectegebied || ''}" ${ fullAccess ? '' : 'disabled'} data-field="collectegebied" style="flex:1;">
             <input type="text" placeholder="0001234" value="${rit.gebiedsnummer || ''}" ${ fullAccess ? '' : 'disabled'} data-field="gebiedsnummer" maxlength="9" style="width: 9ch; margin-left:2px;">
@@ -1102,6 +1102,7 @@ if (isset($_GET['action'])) {
             </div>
             <div class="button-container">
               <button class="action-btn" onclick="openRitConfirmationModal(this)">Bevestig deze rit</button>
+              ${ fullAccess ? '<button class="delete-button" onclick="deleteRow(this)">Verwijder rit</button>' : '' }
             </div>
           </div>
         </td>
