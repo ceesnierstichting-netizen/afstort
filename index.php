@@ -498,6 +498,15 @@ if (isset($_GET['action'])) {
       background-color: #166534;
     }
 
+    #add-chauffeur-button {
+      background-color: #15803d;
+      color: #fff;
+    }
+
+    #add-chauffeur-button:hover {
+      background-color: #166534;
+    }
+
     .delete-button {
       background-color: #ff7a00;
       color: #111;
@@ -730,7 +739,7 @@ if (isset($_GET['action'])) {
         <input type="text" id="newChauffeurIBAN" placeholder="IBAN">
         <input type="password" id="newChauffeurPassword" placeholder="Wachtwoord (8k/1getal/1leesteken)">
       </div>
-      <button onclick="addChauffeur()">Toevoegen</button>
+      <button id="add-chauffeur-button" onclick="addChauffeur()">Toevoegen</button>
     </section>
     <?php endif; ?>
 
@@ -1138,7 +1147,7 @@ if (isset($_GET['action'])) {
               </select>
             </div>
             <div class="button-container">
-              <button class="action-btn" onclick="openRitConfirmationModal(this)">Bevestig deze rit</button>
+              <button class="action-btn" onclick="openRitConfirmationModal(this)">Bevestig rit</button>
               ${ fullAccess ? '<button class="delete-button" onclick="deleteRow(this)">Verwijder rit</button>' : '' }
             </div>
           </div>
