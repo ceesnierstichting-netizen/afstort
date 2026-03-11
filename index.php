@@ -489,8 +489,18 @@ if (isset($_GET['action'])) {
       transform: translateY(-1px);
     }
 
+    #add-rit-button {
+      background-color: #15803d;
+      color: #fff;
+    }
+
+    #add-rit-button:hover {
+      background-color: #166534;
+    }
+
     .delete-button {
-      background-color: #9f1239;
+      background-color: #ff7a00;
+      color: #111;
       padding: 2px 7px;
       font-size: 0.68rem;
       border-radius: 4px;
@@ -527,6 +537,13 @@ if (isset($_GET['action'])) {
       flex-direction: column;
       gap: 6px;
       width: 100%;
+    }
+
+    .button-container .action-btn,
+    .button-container .delete-button {
+      width: 100%;
+      margin-left: 0;
+      text-align: center;
     }
 
     .chauffeur-select-wrapper {
