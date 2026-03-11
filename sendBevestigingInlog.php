@@ -1,23 +1,20 @@
 <?php
-// Schakel foutmelding in (alleen voor debugging – schakel dit uit op productie)
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Ontvang de POST-gegevens
-    $to = $_POST['email'] ?? '';
-    $naam = $_POST['naam'] ?? '';
-    $wachtwoord = $_POST['wachtwoord'] ?? '';
-    $iban = $_POST['IBAN'] ?? '';
+function sendBevestigingInlogMail(array $payload): array
+{
+    $to = $payload['email'] ?? '';
+    $naam = $payload['naam'] ?? '';
+    $wachtwoord = $payload['wachtwoord'] ?? '';
+    $iban = $payload['IBAN'] ?? '';
 
     if (!$to || !$naam || !$wachtwoord) {
-        echo json_encode(['status' => 'error', 'message' => 'Ontbrekende parameters.']);
-        exit();
+        return ['status' => 'error', 'message' => 'Ontbrekende parameters.'];
     }
 
     $subject = "Welkom bij het Nierstichting collecteteam";
-    
-    // Opbouw van de e-mail als HTML
+
     $body = "<html><body>";
     $body .= "Beste $naam,<br><br>";
     $body .= "Wat fijn dat je voor ons als afstortvrijwilliger aan de slag gaat. Wij hebben een systeem ontwikkeld waarin je zelf de ritten kunt selecteren.<br><br>";
@@ -42,19 +39,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $body .= "Met vriendelijke groet,<br>Nierstichting collecteteam";
     $body .= "</body></html>";
 
-    // Voeg de benodigde headers toe voor HTML-e-mail
     $headers = "MIME-Version: 1.0\r\n";
     $headers .= "Content-type: text/html; charset=UTF-8\r\n";
     $headers .= "From: noreply@nierstichtingnederland.nl\r\n";
     $headers .= "Reply-To: noreply@nierstichtingnederland.nl\r\n";
 
     if (mail($to, $subject, $body, $headers)) {
-        echo json_encode(['status' => 'success', 'message' => 'E-mail verzonden.']);
-    } else {
-        echo json_encode(['status' => 'error', 'message' => 'E-mail kon niet worden verzonden.']);
+        return ['status' => 'success', 'message' => 'E-mail verzonden.'];
     }
-    exit();
-} else {
+
+    return ['status' => 'error', 'message' => 'E-mail kon niet worden verzonden.'];
+}
+
+if (basename(__FILE__) === basename($_SERVER['SCRIPT_FILENAME'] ?? '')) {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $result = sendBevestigingInlogMail($_POST);
+        echo json_encode($result);
+        exit();
+    }
+
     echo json_encode(['status' => 'error', 'message' => 'Ongeldig verzoek.']);
 }
 ?>
