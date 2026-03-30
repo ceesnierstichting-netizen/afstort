@@ -873,7 +873,7 @@ if (isset($_GET['action'])) {
         <input type="text" id="newChauffeurIBAN" placeholder="IBAN">
         <input type="password" id="newChauffeurPassword" placeholder="Wachtwoord (8k/1getal/1leesteken)">
       </div>
-      <button id="add-chauffeur-button" onclick="addChauffeur()">Toevoegen</button>
+      <button id="add-chauffeur-button" onclick="addChauffeur()">Voeg chauffeur toe</button>
       <?php if ($isAdmin): ?>
       <button id="rebuild-geo-button" onclick="rebuildAllGeocodes()">Herbereken lat/lon (ritten + chauffeurs)</button>
       <?php endif; ?>
@@ -933,7 +933,7 @@ if (isset($_GET['action'])) {
     </div>
 
     <?php if ($fullAccess): ?>
-    <div class="admin-template-note">Onderstaande teksten dienen als voorbeeld, deze kunnen hier niet worden aangepast.</div>
+    <div class="admin-template-note">Onderstaande teksten worden niet aan chauffeurs getoond en dienen puur als voorbeeld. Deze kunnen hier niet worden aangepast. Om deze aan te passen moet een wijziging in de SQL database worden gedaan. Als dit nodig is, vraag het aan Cees.</div>
     <div id="emailTemplateContainer" class="card">
       <hr>
       <h3>1e bevestiging</h3>
