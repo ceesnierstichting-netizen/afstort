@@ -25,23 +25,47 @@ if (!$data) {
 
 $ids = [];
 foreach ($data as $i => $chauffeur) {
+    $postcode = trim($chauffeur['postcode'] ?? '');
+    $lat = null;
+    $lon = null;
+
+    if ($postcode !== '' && function_exists('extractPostcode4') && function_exists('geocodePostcode')) {
+        $pc4 = extractPostcode4($postcode);
+        if ($pc4) {
+            list($latTmp, $lonTmp) = geocodePostcode($pc4);
+            if ($latTmp !== null && $lonTmp !== null) {
+                $lat = (float)$latTmp;
+                $lon = (float)$lonTmp;
+            }
+        }
+    }
+
     // Verwacht dat de gegevens 'naam' en 'email' bevatten. Indien er een 'id' aanwezig is, wordt deze geüpdatet.
     if (isset($chauffeur['id']) && !empty($chauffeur['id'])) {
         $stmt = $pdo->prepare("UPDATE chauffeurs SET 
             naam = :naam,
-            email = :email
+            email = :email,
+            postcode = :postcode,
+            lat = :lat,
+            lon = :lon
             WHERE id = :id");
         $stmt->execute([
             ':naam'  => $chauffeur['naam'],
             ':email' => $chauffeur['email'],
+            ':postcode' => $postcode,
+            ':lat' => $lat,
+            ':lon' => $lon,
             ':id'    => $chauffeur['id']
         ]);
         $ids[$i] = $chauffeur['id'];
     } else {
-        $stmt = $pdo->prepare("INSERT INTO chauffeurs (naam, email) VALUES (:naam, :email)");
+        $stmt = $pdo->prepare("INSERT INTO chauffeurs (naam, email, postcode, lat, lon) VALUES (:naam, :email, :postcode, :lat, :lon)");
         $stmt->execute([
             ':naam'  => $chauffeur['naam'],
-            ':email' => $chauffeur['email']
+            ':email' => $chauffeur['email'],
+            ':postcode' => $postcode,
+            ':lat' => $lat,
+            ':lon' => $lon
         ]);
         $ids[$i] = $pdo->lastInsertId();
     }
