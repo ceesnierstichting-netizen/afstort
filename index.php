@@ -873,7 +873,7 @@ if (isset($_GET['action'])) {
         <input type="text" id="newChauffeurIBAN" placeholder="IBAN">
         <input type="password" id="newChauffeurPassword" placeholder="Wachtwoord (8k/1getal/1leesteken)">
       </div>
-      <button id="add-chauffeur-button" onclick="addChauffeur()">Toevoegen</button>
+      <button id="add-chauffeur-button" onclick="addChauffeur()">Voeg chauffeur toe</button>
       <?php if ($isAdmin): ?>
       <button id="rebuild-geo-button" onclick="rebuildAllGeocodes()">Herbereken lat/lon (ritten + chauffeurs)</button>
       <?php endif; ?>
