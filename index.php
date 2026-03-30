@@ -371,6 +371,10 @@ if (isset($_GET['action'])) {
             $result['chauffeurs']['updated']++;
         }
 
+        if ($result['ritten']['updated'] === 0 && $result['chauffeurs']['updated'] === 0) {
+            $result['message'] = 'Geen records geüpdatet. Controleer of de geocode-provider bereikbaar is en of de postcodes juist zijn.';
+        }
+
         echo json_encode($result);
         exit();
         
@@ -1816,7 +1820,8 @@ if (isset($_GET['action'])) {
           + "Ritten bijgewerkt: " + (result.ritten?.updated ?? 0) + "\n"
           + "Ritten overgeslagen: " + (result.ritten?.skipped ?? 0) + "\n"
           + "Chauffeurs bijgewerkt: " + (result.chauffeurs?.updated ?? 0) + "\n"
-          + "Chauffeurs overgeslagen: " + (result.chauffeurs?.skipped ?? 0);
+          + "Chauffeurs overgeslagen: " + (result.chauffeurs?.skipped ?? 0)
+          + (result.message ? "\n\n" + result.message : "");
         alert(msg);
       })
       .catch(err => {
