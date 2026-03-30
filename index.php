@@ -61,9 +61,9 @@ if (isset($_GET['action'])) {
             $lat = null;
             $lon = null;
 
-            if ($postcodePlaats !== '' && function_exists('extractPostcode4') && function_exists('geocodePostcode')) {
-                $pc4 = extractPostcode4($postcodePlaats);
-                if ($pc4) {
+            if ($postcodePlaats !== '' && function_exists('geocodePostcode')) {
+                $pc4 = substr($postcodePlaats, 0, 4);
+                if (preg_match('/^[0-9]{4}$/', $pc4)) {
                     list($latTmp, $lonTmp) = geocodePostcode($pc4);
                     if ($latTmp !== null && $lonTmp !== null) {
                         $lat = (float)$latTmp;
@@ -314,9 +314,9 @@ if (isset($_GET['action'])) {
             $lat = null;
             $lon = null;
 
-            if ($postcodePlaats !== '' && function_exists('extractPostcode4') && function_exists('geocodePostcode')) {
-                $pc4 = extractPostcode4($postcodePlaats);
-                if ($pc4) {
+            if ($postcodePlaats !== '' && function_exists('geocodePostcode')) {
+                $pc4 = substr($postcodePlaats, 0, 4);
+                if (preg_match('/^[0-9]{4}$/', $pc4)) {
                     list($latTmp, $lonTmp) = geocodePostcode($pc4);
                     if ($latTmp !== null && $lonTmp !== null) {
                         $lat = (float)$latTmp;
