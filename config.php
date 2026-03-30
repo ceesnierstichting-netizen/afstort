@@ -35,16 +35,34 @@ function geocodePostcode($postcode) {
     // Maak nette variant zonder spaties, hoofdletters
     $clean = strtoupper(str_replace(' ', '', $postcode));
 
-    // Query naar Nominatim (OpenStreetMap)
-    $url = "https://nominatim.openstreetmap.org/search?format=json&q="
-         . urlencode($clean . " Nederland");
+    // 1) Probeer eerst PDOK (Nederlandse locatieserver, geschikt voor postcodes)
+    $pdokUrl = "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free"
+             . "?q=" . urlencode($clean)
+             . "&rows=1";
 
     $opts = [
         "http" => [
-            "header" => "User-Agent: Nierstichting-Afstort/1.0\r\n"
+            "header" => "User-Agent: Nierstichting-Afstort/1.0\r\n",
+            "timeout" => 8
         ]
     ];
     $context = stream_context_create($opts);
+
+    $pdokJson = @file_get_contents($pdokUrl, false, $context);
+    if ($pdokJson !== false) {
+        $pdokData = json_decode($pdokJson, true);
+        $doc = $pdokData['response']['docs'][0] ?? null;
+        $point = $doc['centroide_ll'] ?? null; // bijv. "POINT(4.90092993 52.37275982)"
+        if (is_string($point) && preg_match('/POINT\(([-0-9\.]+)\s+([-0-9\.]+)\)/', $point, $m)) {
+            $lon = floatval($m[1]);
+            $lat = floatval($m[2]);
+            return [$lat, $lon];
+        }
+    }
+
+    // 2) Fallback: Nominatim (OpenStreetMap)
+    $url = "https://nominatim.openstreetmap.org/search?format=json&q="
+         . urlencode($clean . " Nederland");
 
     $json = @file_get_contents($url, false, $context);
     if ($json === false) {

@@ -47,6 +47,8 @@ if (isset($_GET['action'])) {
         if (!is_array($ritten)) {
             $ritten = [];
         }
+
+        $stmtLoadRitGeo = $pdo->prepare("SELECT postcodePlaats, lat, lon FROM ritten WHERE id = :id");
         $ids = [];
         foreach ($ritten as $i => $rit) {
             $gebiedsnummer = isset($rit['gebiedsnummer']) ? trim($rit['gebiedsnummer']) : '';
@@ -55,7 +57,30 @@ if (isset($_GET['action'])) {
                         : 0;
             $status = $rit['status'] ?? '-';
             $wijknaam = $rit['wijknaam'] ?? '';
+            $postcodePlaats = trim($rit['postcodePlaats'] ?? '');
+            $lat = null;
+            $lon = null;
+
+            if ($postcodePlaats !== '' && function_exists('geocodePostcode')) {
+                $pc4 = substr($postcodePlaats, 0, 4);
+                if (preg_match('/^[0-9]{4}$/', $pc4)) {
+                    list($latTmp, $lonTmp) = geocodePostcode($pc4);
+                    if ($latTmp !== null && $lonTmp !== null) {
+                        $lat = (float)$latTmp;
+                        $lon = (float)$lonTmp;
+                    }
+                }
+            }
+
             if (isset($rit['id']) && !empty($rit['id'])) {
+                $stmtLoadRitGeo->execute([':id' => $rit['id']]);
+                $existingRit = $stmtLoadRitGeo->fetch(PDO::FETCH_ASSOC);
+
+                if ($existingRit && $lat === null && $lon === null) {
+                    $lat = isset($existingRit['lat']) && $existingRit['lat'] !== '' ? (float)$existingRit['lat'] : null;
+                    $lon = isset($existingRit['lon']) && $existingRit['lon'] !== '' ? (float)$existingRit['lon'] : null;
+                }
+
                 $stmt = $pdo->prepare("UPDATE ritten SET 
                     collectegebied = :collectegebied,
                     wijknaam = :wijknaam,
@@ -63,6 +88,8 @@ if (isset($_GET['action'])) {
                     contactpersoon = :contactpersoon,
                     adres = :adres,
                     postcodePlaats = :postcodePlaats,
+                    lat = :lat,
+                    lon = :lon,
                     telefoonnummer = :telefoonnummer,
                     email = :email,
                     voorkeurAfhaalmoment = :voorkeurAfhaalmoment,
@@ -82,7 +109,9 @@ if (isset($_GET['action'])) {
                     ':gebiedsnummer'        => $gebiedsnummer,
                     ':contactpersoon'       => $rit['contactpersoon'],
                     ':adres'                => $rit['adres'],
-                    ':postcodePlaats'       => $rit['postcodePlaats'],
+                    ':postcodePlaats'       => $postcodePlaats,
+                    ':lat'                  => $lat,
+                    ':lon'                  => $lon,
                     ':telefoonnummer'       => $rit['telefoonnummer'],
                     ':email'                => $rit['email'],
                     ':voorkeurAfhaalmoment' => $rit['voorkeurAfhaalmoment'] ?? '',
@@ -99,10 +128,10 @@ if (isset($_GET['action'])) {
                 $ids[$i] = $rit['id'];
             } else {
                 $stmt = $pdo->prepare("INSERT INTO ritten (
-                    collectegebied, wijknaam, gebiedsnummer, contactpersoon, adres, postcodePlaats, telefoonnummer, email,
+                    collectegebied, wijknaam, gebiedsnummer, contactpersoon, adres, postcodePlaats, lat, lon, telefoonnummer, email,
                     voorkeurAfhaalmoment, verwachtBedrag, soort, chauffeur, afhaalmoment, afhaaltijd, gestort, afgerond, gereden, status
                     ) VALUES (
-                    :collectegebied, :wijknaam, :gebiedsnummer, :contactpersoon, :adres, :postcodePlaats, :telefoonnummer, :email,
+                    :collectegebied, :wijknaam, :gebiedsnummer, :contactpersoon, :adres, :postcodePlaats, :lat, :lon, :telefoonnummer, :email,
                     :voorkeurAfhaalmoment, :verwachtBedrag, :soort, :chauffeur, :afhaalmoment, :afhaaltijd, :gestort, 0, :gereden, :status
                     )");
                 $stmt->execute([
@@ -111,7 +140,9 @@ if (isset($_GET['action'])) {
                     ':gebiedsnummer'        => $gebiedsnummer,
                     ':contactpersoon'       => $rit['contactpersoon'],
                     ':adres'                => $rit['adres'],
-                    ':postcodePlaats'       => $rit['postcodePlaats'],
+                    ':postcodePlaats'       => $postcodePlaats,
+                    ':lat'                  => $lat,
+                    ':lon'                  => $lon,
                     ':telefoonnummer'       => $rit['telefoonnummer'],
                     ':email'                => $rit['email'],
                     ':voorkeurAfhaalmoment' => $rit['voorkeurAfhaalmoment'] ?? '',
@@ -220,9 +251,24 @@ if (isset($_GET['action'])) {
         $data = json_decode(file_get_contents('php://input'), true);
         $naam = trim($data['chauffeur']);
         $email = trim($data['email'] ?? '');
+        $postcode = trim($data['postcode'] ?? '');
+        $lat = null;
+        $lon = null;
+
+        if ($postcode !== '' && function_exists('extractPostcode4') && function_exists('geocodePostcode')) {
+            $pc4 = extractPostcode4($postcode);
+            if ($pc4) {
+                list($latTmp, $lonTmp) = geocodePostcode($pc4);
+                if ($latTmp !== null && $lonTmp !== null) {
+                    $lat = (float)$latTmp;
+                    $lon = (float)$lonTmp;
+                }
+            }
+        }
+
         if ($naam !== "") {
-            $stmt = $pdo->prepare("UPDATE chauffeurs SET email = :email WHERE naam = :naam");
-            echo $stmt->execute([':email' => $email, ':naam' => $naam])
+            $stmt = $pdo->prepare("UPDATE chauffeurs SET email = :email, postcode = :postcode, lat = :lat, lon = :lon WHERE naam = :naam");
+            echo $stmt->execute([':email' => $email, ':postcode' => $postcode, ':lat' => $lat, ':lon' => $lon, ':naam' => $naam])
                 ? "Email bijgewerkt voor chauffeur."
                 : "Fout bij bijwerken email.";
         } else {
@@ -242,6 +288,94 @@ if (isset($_GET['action'])) {
         } else {
             echo "Onjuist verzoek.";
         }
+        exit();
+        
+    } elseif ($action === 'rebuildAllGeocodes') {
+        header('Content-Type: application/json');
+
+        if (!$isAdmin) {
+            http_response_code(403);
+            echo json_encode(['status' => 'error', 'message' => 'Alleen Admin mag deze actie uitvoeren.']);
+            exit();
+        }
+
+        $result = [
+            'status' => 'ok',
+            'ritten' => ['updated' => 0, 'skipped' => 0],
+            'chauffeurs' => ['updated' => 0, 'skipped' => 0]
+        ];
+
+        $stmtLoadRitten = $pdo->query("SELECT id, postcodePlaats FROM ritten");
+        $ritten = $stmtLoadRitten->fetchAll(PDO::FETCH_ASSOC);
+        $stmtUpdateRitGeo = $pdo->prepare("UPDATE ritten SET lat = :lat, lon = :lon WHERE id = :id");
+
+        foreach ($ritten as $rit) {
+            $postcodePlaats = trim($rit['postcodePlaats'] ?? '');
+            $lat = null;
+            $lon = null;
+
+            if ($postcodePlaats !== '' && function_exists('geocodePostcode')) {
+                $pc4 = substr($postcodePlaats, 0, 4);
+                if (preg_match('/^[0-9]{4}$/', $pc4)) {
+                    list($latTmp, $lonTmp) = geocodePostcode($pc4);
+                    if ($latTmp !== null && $lonTmp !== null) {
+                        $lat = (float)$latTmp;
+                        $lon = (float)$lonTmp;
+                    }
+                }
+            }
+
+            if ($lat === null || $lon === null) {
+                $result['ritten']['skipped']++;
+                continue;
+            }
+
+            $stmtUpdateRitGeo->execute([
+                ':lat' => $lat,
+                ':lon' => $lon,
+                ':id'  => $rit['id']
+            ]);
+            $result['ritten']['updated']++;
+        }
+
+        $stmtLoadChauffeurs = $pdo->query("SELECT id, postcode FROM chauffeurs");
+        $chauffeurs = $stmtLoadChauffeurs->fetchAll(PDO::FETCH_ASSOC);
+        $stmtUpdateChauffeurGeo = $pdo->prepare("UPDATE chauffeurs SET lat = :lat, lon = :lon WHERE id = :id");
+
+        foreach ($chauffeurs as $chauffeur) {
+            $postcode = trim($chauffeur['postcode'] ?? '');
+            $lat = null;
+            $lon = null;
+
+            if ($postcode !== '' && function_exists('extractPostcode4') && function_exists('geocodePostcode')) {
+                $pc4 = extractPostcode4($postcode);
+                if ($pc4) {
+                    list($latTmp, $lonTmp) = geocodePostcode($pc4);
+                    if ($latTmp !== null && $lonTmp !== null) {
+                        $lat = (float)$latTmp;
+                        $lon = (float)$lonTmp;
+                    }
+                }
+            }
+
+            if ($lat === null || $lon === null) {
+                $result['chauffeurs']['skipped']++;
+                continue;
+            }
+
+            $stmtUpdateChauffeurGeo->execute([
+                ':lat' => $lat,
+                ':lon' => $lon,
+                ':id'  => $chauffeur['id']
+            ]);
+            $result['chauffeurs']['updated']++;
+        }
+
+        if ($result['ritten']['updated'] === 0 && $result['chauffeurs']['updated'] === 0) {
+            $result['message'] = 'Geen records geüpdatet. Controleer of de geocode-provider bereikbaar is en of de postcodes juist zijn.';
+        }
+
+        echo json_encode($result);
         exit();
         
     } elseif ($action === 'loadEmailTemplate') {
@@ -740,6 +874,9 @@ if (isset($_GET['action'])) {
         <input type="password" id="newChauffeurPassword" placeholder="Wachtwoord (8k/1getal/1leesteken)">
       </div>
       <button id="add-chauffeur-button" onclick="addChauffeur()">Toevoegen</button>
+      <?php if ($isAdmin): ?>
+      <button id="rebuild-geo-button" onclick="rebuildAllGeocodes()">Herbereken lat/lon (ritten + chauffeurs)</button>
+      <?php endif; ?>
     </section>
     <?php endif; ?>
 
@@ -1666,6 +1803,31 @@ if (isset($_GET['action'])) {
       .then(response => response.text())
       .then(text => { alert(text); loadChauffeurs(); })
       .catch(err => { console.error("Fout bij toevoegen chauffeur:", err); });
+    }
+    function rebuildAllGeocodes() {
+      if (!confirm("Weet je zeker dat je alle lat/lon opnieuw wilt laten berekenen?")) return;
+      fetch(buildUrl("rebuildAllGeocodes"), {
+        method: "POST"
+      })
+      .then(response => response.json())
+      .then(result => {
+        if (!result || result.status !== "ok") {
+          alert("Fout bij herberekenen van lat/lon.");
+          return;
+        }
+
+        const msg = "Lat/lon herberekend.\n"
+          + "Ritten bijgewerkt: " + (result.ritten?.updated ?? 0) + "\n"
+          + "Ritten overgeslagen: " + (result.ritten?.skipped ?? 0) + "\n"
+          + "Chauffeurs bijgewerkt: " + (result.chauffeurs?.updated ?? 0) + "\n"
+          + "Chauffeurs overgeslagen: " + (result.chauffeurs?.skipped ?? 0)
+          + (result.message ? "\n\n" + result.message : "");
+        alert(msg);
+      })
+      .catch(err => {
+        console.error("Fout bij herberekenen lat/lon:", err);
+        alert("Fout bij herberekenen van lat/lon.");
+      });
     }
     <?php endif; ?>
     

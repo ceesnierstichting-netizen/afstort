@@ -27,8 +27,22 @@ $ids = [];
 foreach ($data as $i => $rit) {
     // Zorg dat gebiedsnummer aanwezig is, anders een lege string
     $gebiedsnummer = isset($rit['gebiedsnummer']) ? trim($rit['gebiedsnummer']) : '';
+    $postcodePlaats = trim($rit['postcodePlaats'] ?? '');
     // Reken het aantal gereden kilometers af
     $gereden = isset($rit['gereden']) && $rit['gereden'] !== "" ? intval(round($rit['gereden'])) : 0;
+    $lat = null;
+    $lon = null;
+
+    if ($postcodePlaats !== '' && function_exists('geocodePostcode')) {
+        $pc4 = substr($postcodePlaats, 0, 4);
+        if (preg_match('/^[0-9]{4}$/', $pc4)) {
+            list($latTmp, $lonTmp) = geocodePostcode($pc4);
+            if ($latTmp !== null && $lonTmp !== null) {
+                $lat = (float)$latTmp;
+                $lon = (float)$lonTmp;
+            }
+        }
+    }
     
     // Als er een ID is, gaat het om een update; anders een insert.
     if (isset($rit['id']) && !empty($rit['id'])) {
@@ -39,6 +53,8 @@ foreach ($data as $i => $rit) {
             contactpersoon       = :contactpersoon,
             adres                = :adres,
             postcodePlaats       = :postcodePlaats,
+            lat                  = :lat,
+            lon                  = :lon,
             telefoonnummer       = :telefoonnummer,
             email                = :email,
             voorkeurAfhaalmoment = :voorkeurAfhaalmoment,
@@ -57,7 +73,9 @@ foreach ($data as $i => $rit) {
             ':wijknaam'             => $rit['wijknaam'],
             ':contactpersoon'       => $rit['contactpersoon'],
             ':adres'                => $rit['adres'],
-            ':postcodePlaats'       => $rit['postcodePlaats'],
+            ':postcodePlaats'       => $postcodePlaats,
+            ':lat'                  => $lat,
+            ':lon'                  => $lon,
             ':telefoonnummer'       => $rit['telefoonnummer'],
             ':email'                => $rit['email'],
             ':voorkeurAfhaalmoment' => $rit['voorkeurAfhaalmoment'] ?? '',
@@ -77,10 +95,10 @@ foreach ($data as $i => $rit) {
         $ids[$i] = $rit['id'];
     } else {
         $stmt = $pdo->prepare("INSERT INTO ritten (
-            collectegebied, gebiedsnummer, wijknaam, contactpersoon, adres, postcodePlaats, telefoonnummer, email,
+            collectegebied, gebiedsnummer, wijknaam, contactpersoon, adres, postcodePlaats, lat, lon, telefoonnummer, email,
             voorkeurAfhaalmoment, verwachtBedrag, soort, chauffeur, afhaalmoment, afhaaltijd, gestort, status, gereden
             ) VALUES (
-            :collectegebied, :gebiedsnummer, :wijknaam, :contactpersoon, :adres, :postcodePlaats, :telefoonnummer, :email,
+            :collectegebied, :gebiedsnummer, :wijknaam, :contactpersoon, :adres, :postcodePlaats, :lat, :lon, :telefoonnummer, :email,
             :voorkeurAfhaalmoment, :verwachtBedrag, :soort, :chauffeur, :afhaalmoment, :afhaaltijd, :gestort, :status, :gereden
             )");
         $result = $stmt->execute([
@@ -89,7 +107,9 @@ foreach ($data as $i => $rit) {
             ':wijknaam'             => $rit['wijknaam'],  
             ':contactpersoon'       => $rit['contactpersoon'],
             ':adres'                => $rit['adres'],
-            ':postcodePlaats'       => $rit['postcodePlaats'],
+            ':postcodePlaats'       => $postcodePlaats,
+            ':lat'                  => $lat,
+            ':lon'                  => $lon,
             ':telefoonnummer'       => $rit['telefoonnummer'],
             ':email'                => $rit['email'],
             ':voorkeurAfhaalmoment' => $rit['voorkeurAfhaalmoment'] ?? '',
