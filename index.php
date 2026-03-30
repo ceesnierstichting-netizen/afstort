@@ -933,7 +933,7 @@ if (isset($_GET['action'])) {
     </div>
 
     <?php if ($fullAccess): ?>
-    <div class="admin-template-note">Onderstaande teksten dienen als voorbeeld, deze kunnen hier niet worden aangepast.</div>
+    <div class="admin-template-note">Onderstaande teksten worden niet aan chauffeurs getoond en dienen puur als voorbeeld. Deze kunnen hier niet worden aangepast. Om deze aan te passen moet een wijziging in de SQL database worden gedaan. Als dit nodig is, vraag het aan Cees.</div>
     <div id="emailTemplateContainer" class="card">
       <hr>
       <h3>1e bevestiging</h3>
