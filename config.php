@@ -78,15 +78,24 @@ function geocodePostcode($postcode) {
 }
 
 /**
- * Haal de eerste 4 cijfers (pc4) uit een string zoals '1234 AB Amsterdam'.
+ * Haal Nederlandse postcode met 6 posities (1234AB) uit een string
+ * zoals '1234 AB Amsterdam'.
  */
-function extractPostcode4($str) {
+function extractPostcode6($str) {
     if (!$str) return '';
 
-    if (preg_match('/([0-9]{4})/', $str, $m)) {
-        return $m[1];
+    if (preg_match('/([0-9]{4})\s*([A-Za-z]{2})/', trim($str), $m)) {
+        return strtoupper($m[1] . $m[2]);
     }
     return '';
+}
+
+/**
+ * Backward-compatible alias.
+ * Let op: retourneert nu pc6 i.p.v. pc4.
+ */
+function extractPostcode4($str) {
+    return extractPostcode6($str);
 }
 
 ?>

@@ -33,10 +33,10 @@ foreach ($data as $i => $rit) {
     $lat = null;
     $lon = null;
 
-    if ($postcodePlaats !== '' && function_exists('geocodePostcode')) {
-        $pc4 = substr($postcodePlaats, 0, 4);
-        if (preg_match('/^[0-9]{4}$/', $pc4)) {
-            list($latTmp, $lonTmp) = geocodePostcode($pc4);
+    if ($postcodePlaats !== '' && function_exists('extractPostcode6') && function_exists('geocodePostcode')) {
+        $pc6 = extractPostcode6($postcodePlaats);
+        if ($pc6) {
+            list($latTmp, $lonTmp) = geocodePostcode($pc6);
             if ($latTmp !== null && $lonTmp !== null) {
                 $lat = (float)$latTmp;
                 $lon = (float)$lonTmp;

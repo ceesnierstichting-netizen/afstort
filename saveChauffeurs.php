@@ -29,10 +29,10 @@ foreach ($data as $i => $chauffeur) {
     $lat = null;
     $lon = null;
 
-    if ($postcode !== '' && function_exists('extractPostcode4') && function_exists('geocodePostcode')) {
-        $pc4 = extractPostcode4($postcode);
-        if ($pc4) {
-            list($latTmp, $lonTmp) = geocodePostcode($pc4);
+    if ($postcode !== '' && function_exists('extractPostcode6') && function_exists('geocodePostcode')) {
+        $pc6 = extractPostcode6($postcode);
+        if ($pc6) {
+            list($latTmp, $lonTmp) = geocodePostcode($pc6);
             if ($latTmp !== null && $lonTmp !== null) {
                 $lat = (float)$latTmp;
                 $lon = (float)$lonTmp;
