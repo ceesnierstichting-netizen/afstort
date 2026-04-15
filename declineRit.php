@@ -1,23 +1,38 @@
 <?php
-// declineRit.php — gebruikt pc4-verschil om volgende chauffeur te kiezen
+// declineRit.php - gebruikt echte km-afstand om volgende chauffeur te kiezen
 
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 require_once "config.php";
 
-function pc4Distance($pc4Rit, $pc4Ch) {
-    $a = (int)$pc4Rit;
-    $b = (int)$pc4Ch;
-    return abs($a - $b);
+function haversineDistanceKm($lat1, $lon1, $lat2, $lon2) {
+    $earthRadiusKm = 6371.0;
+
+    $dLat = deg2rad($lat2 - $lat1);
+    $dLon = deg2rad($lon2 - $lon1);
+
+    $a = sin($dLat / 2) * sin($dLat / 2)
+       + cos(deg2rad($lat1)) * cos(deg2rad($lat2))
+       * sin($dLon / 2) * sin($dLon / 2);
+
+    $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+    return $earthRadiusKm * $c;
 }
 
-function extractPostcode4_local($str) {
+function extractPostcode6_local($str) {
     if (!$str) return '';
-    if (preg_match('/([0-9]{4})/', $str, $m)) {
-        return $m[1];
+    if (preg_match('/([0-9]{4})\s*([A-Za-z]{2})/', trim($str), $m)) {
+        return strtoupper($m[1] . $m[2]);
     }
     return '';
+}
+
+function isValidCoord($lat, $lon) {
+    return is_numeric($lat) && is_numeric($lon)
+        && $lat >= -90 && $lat <= 90
+        && $lon >= -180 && $lon <= 180;
 }
 
 $ritId         = isset($_GET['rit']) ? (int)$_GET['rit'] : 0;
@@ -29,11 +44,7 @@ if (!$ritId || $chauffeurNaam === '') {
 }
 
 // ---- 1. Rit ophalen ----
-$stmt = $pdo->prepare("
-    SELECT id, collectegebied, postcodePlaats
-    FROM ritten
-    WHERE id = :id
-");
+$stmt = $pdo->prepare("\n    SELECT id, collectegebied, postcodePlaats, lat, lon\n    FROM ritten\n    WHERE id = :id\n");
 $stmt->execute(array(':id' => $ritId));
 $rit = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -44,24 +55,28 @@ if (!$rit) {
 
 $ritPostcodePlaats = isset($rit['postcodePlaats']) ? $rit['postcodePlaats'] : '';
 
-if (function_exists('extractPostcode4')) {
-    $pc4Rit = extractPostcode4($ritPostcodePlaats);
+if (function_exists('extractPostcode6')) {
+    $pc6Rit = extractPostcode6($ritPostcodePlaats);
 } else {
-    $pc4Rit = extractPostcode4_local($ritPostcodePlaats);
+    $pc6Rit = extractPostcode6_local($ritPostcodePlaats);
 }
 
-if (!$pc4Rit) {
-    echo "Je afmelding is geregistreerd, maar er kon geen geldige postcode (4 cijfers) bij deze rit worden gevonden.";
+$ritLat = isset($rit['lat']) ? $rit['lat'] : null;
+$ritLon = isset($rit['lon']) ? $rit['lon'] : null;
+if (!isValidCoord($ritLat, $ritLon) && $pc6Rit && function_exists('geocodePostcode')) {
+    list($tmpLat, $tmpLon) = geocodePostcode($pc6Rit);
+    $ritLat = $tmpLat;
+    $ritLon = $tmpLon;
+}
+if (!isValidCoord($ritLat, $ritLon)) {
+    echo "Je afmelding is geregistreerd, maar er kon geen geldige locatie (coordinaten) bij deze rit worden bepaald.";
     exit;
 }
+$ritLat = (float)$ritLat;
+$ritLon = (float)$ritLon;
 
 // ---- 2. Chauffeurs ophalen ----
-$stmt = $pdo->query("
-    SELECT id, naam, email, postcode
-    FROM chauffeurs
-    WHERE naam <> 'Admin'
-      AND email <> ''
-");
+$stmt = $pdo->query("\n    SELECT id, naam, email, postcode, lat, lon\n    FROM chauffeurs\n    WHERE naam <> 'Admin'\n      AND email <> ''\n");
 $chauffeurs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 if (!$chauffeurs) {
@@ -69,7 +84,7 @@ if (!$chauffeurs) {
     exit;
 }
 
-// ---- 3. Dichtstbijzijnde andere chauffeur bepalen (pc4-verschil) ----
+// ---- 3. Dichtstbijzijnde andere chauffeur bepalen (km via Haversine) ----
 $nearest      = null;
 $nearestScore = null;
 
@@ -87,23 +102,30 @@ foreach ($chauffeurs as $ch) {
         continue;
     }
 
-    if (function_exists('extractPostcode4')) {
-        $pc4Ch = extractPostcode4($postcode);
+    if (function_exists('extractPostcode6')) {
+        $pc6Ch = extractPostcode6($postcode);
     } else {
-        $pc4Ch = extractPostcode4_local($postcode);
+        $pc6Ch = extractPostcode6_local($postcode);
     }
 
-    if (!$pc4Ch) {
+    $chLat = isset($ch['lat']) ? $ch['lat'] : null;
+    $chLon = isset($ch['lon']) ? $ch['lon'] : null;
+    if (!isValidCoord($chLat, $chLon) && $pc6Ch && function_exists('geocodePostcode')) {
+        list($tmpLat, $tmpLon) = geocodePostcode($pc6Ch);
+        $chLat = $tmpLat;
+        $chLon = $tmpLon;
+    }
+    if (!isValidCoord($chLat, $chLon)) {
         continue;
     }
 
-    $score = pc4Distance($pc4Rit, $pc4Ch);
+    $score = haversineDistanceKm($ritLat, $ritLon, (float)$chLat, (float)$chLon);
 
     if ($nearest === null || $score < $nearestScore) {
         $nearest      = array(
             'naam'  => $naam,
             'email' => $email,
-            'pc4'   => $pc4Ch,
+            'pc6'   => $pc6Ch,
         );
         $nearestScore = $score;
     }
