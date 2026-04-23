@@ -29,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
+    <?php echo noIndexMetaTag(); ?>
     <title>Nieuw wachtwoord instellen</title>
     <link rel="icon" type="image/png" href="favicon.png"> 
     <style>

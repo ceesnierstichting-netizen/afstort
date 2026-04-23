@@ -1,6 +1,9 @@
 <?php
 // form.php
 session_start();
+if (!headers_sent()) {
+    header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex', true);
+}
 // Hier kun je indien nodig de database connectie en data ophalen, bijvoorbeeld:
 $data = [
     'collectegebied'   => 'Voorbeeldgebied',
@@ -21,6 +24,8 @@ $data = [
 <html lang="nl">
 <head>
   <meta charset="UTF-8">
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+  <meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
   <title>Afhaal Collecte-opbrengst Formulier</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }

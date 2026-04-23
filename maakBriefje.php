@@ -39,6 +39,7 @@ $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? '')
 <html lang="nl">
 <head>
   <meta charset="UTF-8">
+  <?php echo noIndexMetaTag(); ?>
   <title>Briefje: Afhaal Collecte-opbrengst</title>
   <style>
     /* Zorg dat de pagina bij printen in landscape staat zonder marges */

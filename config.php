@@ -2,6 +2,19 @@
 // config.php
 // Database configuratie (geen session_start hier)
 
+function sendNoIndexHeaders() {
+    if (!headers_sent()) {
+        header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex', true);
+    }
+}
+
+function noIndexMetaTag() {
+    return '<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">' . PHP_EOL
+         . '    <meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet, noimageindex">';
+}
+
+sendNoIndexHeaders();
+
 $host    = 'database-5017237046.webspace-host.com';
 $db      = 'dbs13838352';  // Gebruik hier exact je originele database naam
 $user    = 'dbu1220177';

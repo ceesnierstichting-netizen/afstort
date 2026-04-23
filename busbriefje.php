@@ -21,6 +21,7 @@ if (!$ride) {
 <html lang="nl">
 <head>
   <meta charset="UTF-8">
+  <?php echo noIndexMetaTag(); ?>
   <title>Busbriefje - 10x op A4</title>
   <style>
     /* Pagina instellen op A4 met marges */

@@ -148,6 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="nl">
 <head>
   <meta charset="UTF-8">
+  <?php echo noIndexMetaTag(); ?>
   <title>Email Opstellen</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }

@@ -28,6 +28,7 @@ if ($fullAccess) {
 <html lang="nl">
 <head>
   <meta charset="UTF-8">
+  <?php echo noIndexMetaTag(); ?>
   <title>Rapport</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }

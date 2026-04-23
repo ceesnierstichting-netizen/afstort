@@ -138,6 +138,7 @@ if ($nearest === null) {
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
+    <?php echo noIndexMetaTag(); ?>
     <title>Afmelding rit</title>
 </head>
 <body>
@@ -193,6 +194,7 @@ $mailResponse = @file_get_contents("https://nierstichtingnederland.nl/afstort/se
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
+    <?php echo noIndexMetaTag(); ?>
     <title>Afmelding rit</title>
 </head>
 <body>

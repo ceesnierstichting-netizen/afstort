@@ -1,4 +1,7 @@
 <?php
+if (!headers_sent()) {
+    header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex', true);
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Verwerking: E-mail verzenden met bijlagen
 
@@ -95,6 +98,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+    <meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
     <title>E-mail versturen</title>
     <style>
       body { font-family: Arial, sans-serif; padding: 20px; }
