@@ -1582,9 +1582,14 @@ if (isset($_GET['action'])) {
       const rows = document.querySelectorAll("#tableBody tr");
       let ritten = [];
       rows.forEach(row => {
+        const collectegebiedInput = row.querySelector("input[data-field='collectegebied']");
+        if (!collectegebiedInput) {
+          return;
+        }
+
         let data = {
           id: row.querySelector(".rowId") ? row.querySelector(".rowId").value : "",
-          collectegebied: row.querySelector("input[data-field='collectegebied']").value,
+          collectegebied: collectegebiedInput.value,
           wijknaam: row.querySelector("input[data-field='wijknaam']").value,
           gebiedsnummer: row.querySelector("input[data-field='gebiedsnummer']").value,
           contactpersoon: row.querySelector("input[data-field='contactpersoon']").value,
@@ -1842,6 +1847,14 @@ if (isset($_GET['action'])) {
     
     function addRow() {
       const tableBody = document.getElementById("tableBody");
+      const hasOnlyPlaceholderRow =
+        tableBody.children.length === 1 &&
+        !tableBody.querySelector("input[data-field='collectegebied']");
+
+      if (hasOnlyPlaceholderRow) {
+        tableBody.innerHTML = "";
+      }
+
       const newRow = buildRitRow({});
       tableBody.appendChild(newRow);
       updateChauffeurSelect();
