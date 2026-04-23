@@ -42,123 +42,163 @@ if (isset($_GET['action'])) {
         exit();
     } elseif ($action === 'saveRitten') {
         header('Content-Type: application/json');
-        $input = file_get_contents('php://input');
-        $ritten = json_decode($input, true);
-        if (!is_array($ritten)) {
-            $ritten = [];
-        }
+        try {
+            $input = file_get_contents('php://input');
+            $ritten = json_decode($input, true);
+            if (!is_array($ritten)) {
+                $ritten = [];
+            }
 
-        $stmtLoadRitGeo = $pdo->prepare("SELECT postcodePlaats, lat, lon FROM ritten WHERE id = :id");
-        $ids = [];
-        foreach ($ritten as $i => $rit) {
-            $gebiedsnummer = isset($rit['gebiedsnummer']) ? trim($rit['gebiedsnummer']) : '';
-            $gereden = (isset($rit['gereden']) && $rit['gereden'] !== "")
-                        ? intval(round($rit['gereden']))
-                        : 0;
-            $status = $rit['status'] ?? '-';
-            $wijknaam = $rit['wijknaam'] ?? '';
-            $postcodePlaats = trim($rit['postcodePlaats'] ?? '');
-            $lat = null;
-            $lon = null;
+            $stmtLoadRitGeo = $pdo->prepare("SELECT postcodePlaats, lat, lon FROM ritten WHERE id = :id");
+            $ids = [];
+            foreach ($ritten as $i => $rit) {
+                $collectegebied = trim($rit['collectegebied'] ?? '');
+                $wijknaam = trim($rit['wijknaam'] ?? '');
+                $gebiedsnummer = trim($rit['gebiedsnummer'] ?? '');
+                $contactpersoon = trim($rit['contactpersoon'] ?? '');
+                $adres = trim($rit['adres'] ?? '');
+                $postcodePlaats = trim($rit['postcodePlaats'] ?? '');
+                $telefoonnummer = trim($rit['telefoonnummer'] ?? '');
+                $email = trim($rit['email'] ?? '');
+                $voorkeurAfhaalmoment = trim($rit['voorkeurAfhaalmoment'] ?? '');
+                $verwachtBedrag = trim((string)($rit['verwachtBedrag'] ?? ''));
+                $soort = trim($rit['soort'] ?? 'munt- en briefgeld');
+                $chauffeur = trim($rit['chauffeur'] ?? 'Chauffeur kiezen');
+                $afhaalmoment = trim($rit['afhaalmoment'] ?? '');
+                $afhaaltijd = trim($rit['afhaaltijd'] ?? '');
+                $gestort = trim((string)($rit['gestort'] ?? ''));
+                $gereden = (isset($rit['gereden']) && $rit['gereden'] !== "")
+                            ? intval(round($rit['gereden']))
+                            : 0;
+                $status = trim($rit['status'] ?? '-');
+                $lat = null;
+                $lon = null;
 
-            if ($postcodePlaats !== '' && function_exists('geocodePostcode')) {
-                $pc4 = substr($postcodePlaats, 0, 4);
-                if (preg_match('/^[0-9]{4}$/', $pc4)) {
-                    list($latTmp, $lonTmp) = geocodePostcode($pc4);
-                    if ($latTmp !== null && $lonTmp !== null) {
-                        $lat = (float)$latTmp;
-                        $lon = (float)$lonTmp;
+                if (
+                    $collectegebied === '' &&
+                    $wijknaam === '' &&
+                    $gebiedsnummer === '' &&
+                    $contactpersoon === '' &&
+                    $adres === '' &&
+                    $postcodePlaats === '' &&
+                    $telefoonnummer === '' &&
+                    $email === '' &&
+                    $voorkeurAfhaalmoment === '' &&
+                    $verwachtBedrag === '' &&
+                    $afhaalmoment === '' &&
+                    $afhaaltijd === '' &&
+                    $gestort === '' &&
+                    $gereden === 0 &&
+                    $status === '-'
+                ) {
+                    continue;
+                }
+
+                if ($postcodePlaats !== '' && function_exists('geocodePostcode')) {
+                    $pc4 = substr($postcodePlaats, 0, 4);
+                    if (preg_match('/^[0-9]{4}$/', $pc4)) {
+                        list($latTmp, $lonTmp) = geocodePostcode($pc4);
+                        if ($latTmp !== null && $lonTmp !== null) {
+                            $lat = (float)$latTmp;
+                            $lon = (float)$lonTmp;
+                        }
                     }
                 }
-            }
 
-            if (isset($rit['id']) && !empty($rit['id'])) {
-                $stmtLoadRitGeo->execute([':id' => $rit['id']]);
-                $existingRit = $stmtLoadRitGeo->fetch(PDO::FETCH_ASSOC);
+                if (isset($rit['id']) && !empty($rit['id'])) {
+                    $stmtLoadRitGeo->execute([':id' => $rit['id']]);
+                    $existingRit = $stmtLoadRitGeo->fetch(PDO::FETCH_ASSOC);
 
-                if ($existingRit && $lat === null && $lon === null) {
-                    $lat = isset($existingRit['lat']) && $existingRit['lat'] !== '' ? (float)$existingRit['lat'] : null;
-                    $lon = isset($existingRit['lon']) && $existingRit['lon'] !== '' ? (float)$existingRit['lon'] : null;
+                    if ($existingRit && $lat === null && $lon === null) {
+                        $lat = isset($existingRit['lat']) && $existingRit['lat'] !== '' ? (float)$existingRit['lat'] : null;
+                        $lon = isset($existingRit['lon']) && $existingRit['lon'] !== '' ? (float)$existingRit['lon'] : null;
+                    }
+
+                    $stmt = $pdo->prepare("UPDATE ritten SET 
+                        collectegebied = :collectegebied,
+                        wijknaam = :wijknaam,
+                        gebiedsnummer = :gebiedsnummer,
+                        contactpersoon = :contactpersoon,
+                        adres = :adres,
+                        postcodePlaats = :postcodePlaats,
+                        lat = :lat,
+                        lon = :lon,
+                        telefoonnummer = :telefoonnummer,
+                        email = :email,
+                        voorkeurAfhaalmoment = :voorkeurAfhaalmoment,
+                        verwachtBedrag = :verwachtBedrag,
+                        soort = :soort,
+                        chauffeur = :chauffeur,
+                        afhaalmoment = :afhaalmoment,
+                        afhaaltijd = :afhaaltijd,
+                        gestort = :gestort,
+                        gereden = :gereden,
+                        status = :status
+                        WHERE id = :id");
+                    $stmt->execute([
+                        ':collectegebied'       => $collectegebied,
+                        ':wijknaam'             => $wijknaam,
+                        ':gebiedsnummer'        => $gebiedsnummer,
+                        ':contactpersoon'       => $contactpersoon,
+                        ':adres'                => $adres,
+                        ':postcodePlaats'       => $postcodePlaats,
+                        ':lat'                  => $lat,
+                        ':lon'                  => $lon,
+                        ':telefoonnummer'       => $telefoonnummer,
+                        ':email'                => $email,
+                        ':voorkeurAfhaalmoment' => $voorkeurAfhaalmoment,
+                        ':verwachtBedrag'       => $verwachtBedrag,
+                        ':soort'                => $soort,
+                        ':chauffeur'            => $chauffeur,
+                        ':afhaalmoment'         => $afhaalmoment,
+                        ':afhaaltijd'           => $afhaaltijd,
+                        ':gestort'              => $gestort,
+                        ':gereden'              => $gereden,
+                        ':status'               => $status,
+                        ':id'                   => $rit['id']
+                    ]);
+                    $ids[$i] = $rit['id'];
+                } else {
+                    $stmt = $pdo->prepare("INSERT INTO ritten (
+                        collectegebied, wijknaam, gebiedsnummer, contactpersoon, adres, postcodePlaats, lat, lon, telefoonnummer, email,
+                        voorkeurAfhaalmoment, verwachtBedrag, soort, chauffeur, afhaalmoment, afhaaltijd, gestort, gereden, status
+                        ) VALUES (
+                        :collectegebied, :wijknaam, :gebiedsnummer, :contactpersoon, :adres, :postcodePlaats, :lat, :lon, :telefoonnummer, :email,
+                        :voorkeurAfhaalmoment, :verwachtBedrag, :soort, :chauffeur, :afhaalmoment, :afhaaltijd, :gestort, :gereden, :status
+                        )");
+                    $stmt->execute([
+                        ':collectegebied'       => $collectegebied,
+                        ':wijknaam'             => $wijknaam,
+                        ':gebiedsnummer'        => $gebiedsnummer,
+                        ':contactpersoon'       => $contactpersoon,
+                        ':adres'                => $adres,
+                        ':postcodePlaats'       => $postcodePlaats,
+                        ':lat'                  => $lat,
+                        ':lon'                  => $lon,
+                        ':telefoonnummer'       => $telefoonnummer,
+                        ':email'                => $email,
+                        ':voorkeurAfhaalmoment' => $voorkeurAfhaalmoment,
+                        ':verwachtBedrag'       => $verwachtBedrag,
+                        ':soort'                => $soort,
+                        ':chauffeur'            => $chauffeur,
+                        ':afhaalmoment'         => $afhaalmoment,
+                        ':afhaaltijd'           => $afhaaltijd,
+                        ':gestort'              => $gestort,
+                        ':gereden'              => $gereden,
+                        ':status'               => $status
+                    ]);
+                    $ids[$i] = $pdo->lastInsertId();
                 }
-
-                $stmt = $pdo->prepare("UPDATE ritten SET 
-                    collectegebied = :collectegebied,
-                    wijknaam = :wijknaam,
-                    gebiedsnummer = :gebiedsnummer,
-                    contactpersoon = :contactpersoon,
-                    adres = :adres,
-                    postcodePlaats = :postcodePlaats,
-                    lat = :lat,
-                    lon = :lon,
-                    telefoonnummer = :telefoonnummer,
-                    email = :email,
-                    voorkeurAfhaalmoment = :voorkeurAfhaalmoment,
-                    verwachtBedrag = :verwachtBedrag,
-                    soort = :soort,
-                    chauffeur = :chauffeur,
-                    afhaalmoment = :afhaalmoment,
-                    afhaaltijd = :afhaaltijd,
-                    gestort = :gestort,
-                    afgerond = 0,
-                    gereden = :gereden,
-                    status = :status
-                    WHERE id = :id");
-                $stmt->execute([
-                    ':collectegebied'       => $rit['collectegebied'],
-                    ':wijknaam'             => $wijknaam,
-                    ':gebiedsnummer'        => $gebiedsnummer,
-                    ':contactpersoon'       => $rit['contactpersoon'],
-                    ':adres'                => $rit['adres'],
-                    ':postcodePlaats'       => $postcodePlaats,
-                    ':lat'                  => $lat,
-                    ':lon'                  => $lon,
-                    ':telefoonnummer'       => $rit['telefoonnummer'],
-                    ':email'                => $rit['email'],
-                    ':voorkeurAfhaalmoment' => $rit['voorkeurAfhaalmoment'] ?? '',
-                    ':verwachtBedrag'       => $rit['verwachtBedrag'] ?? '',
-                    ':soort'                => $rit['soort'],
-                    ':chauffeur'            => $rit['chauffeur'],
-                    ':afhaalmoment'         => $rit['afhaalmoment'],
-                    ':afhaaltijd'           => $rit['afhaaltijd'],
-                    ':gestort'              => $rit['gestort'] ?? "",
-                    ':gereden'              => $gereden,
-                    ':status'               => $status,
-                    ':id'                   => $rit['id']
-                ]);
-                $ids[$i] = $rit['id'];
-            } else {
-                $stmt = $pdo->prepare("INSERT INTO ritten (
-                    collectegebied, wijknaam, gebiedsnummer, contactpersoon, adres, postcodePlaats, lat, lon, telefoonnummer, email,
-                    voorkeurAfhaalmoment, verwachtBedrag, soort, chauffeur, afhaalmoment, afhaaltijd, gestort, afgerond, gereden, status
-                    ) VALUES (
-                    :collectegebied, :wijknaam, :gebiedsnummer, :contactpersoon, :adres, :postcodePlaats, :lat, :lon, :telefoonnummer, :email,
-                    :voorkeurAfhaalmoment, :verwachtBedrag, :soort, :chauffeur, :afhaalmoment, :afhaaltijd, :gestort, 0, :gereden, :status
-                    )");
-                $stmt->execute([
-                    ':collectegebied'       => $rit['collectegebied'],
-                    ':wijknaam'             => $wijknaam,
-                    ':gebiedsnummer'        => $gebiedsnummer,
-                    ':contactpersoon'       => $rit['contactpersoon'],
-                    ':adres'                => $rit['adres'],
-                    ':postcodePlaats'       => $postcodePlaats,
-                    ':lat'                  => $lat,
-                    ':lon'                  => $lon,
-                    ':telefoonnummer'       => $rit['telefoonnummer'],
-                    ':email'                => $rit['email'],
-                    ':voorkeurAfhaalmoment' => $rit['voorkeurAfhaalmoment'] ?? '',
-                    ':verwachtBedrag'       => $rit['verwachtBedrag'] ?? '',
-                    ':soort'                => $rit['soort'],
-                    ':chauffeur'            => $rit['chauffeur'],
-                    ':afhaalmoment'         => $rit['afhaalmoment'],
-                    ':afhaaltijd'           => $rit['afhaaltijd'],
-                    ':gestort'              => $rit['gestort'] ?? "",
-                    ':gereden'              => $gereden,
-                    ':status'               => $rit['status']
-                ]);
-                $ids[$i] = $pdo->lastInsertId();
             }
+
+            echo json_encode(['status' => 'ok', 'ids' => $ids]);
+        } catch (Throwable $e) {
+            http_response_code(500);
+            echo json_encode([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ]);
         }
-        echo json_encode($ids);
         exit();
         
     } elseif ($action === 'deleteRit') {
@@ -1614,8 +1654,24 @@ if (isset($_GET['action'])) {
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify(ritten)
       })
-      .then(response => response.json())
-      .then(ids => {
+      .then(async response => {
+        const text = await response.text();
+        let payload = null;
+
+        try {
+          payload = text ? JSON.parse(text) : null;
+        } catch (err) {
+          throw new Error(text || "Onleesbare serverrespons.");
+        }
+
+        if (!response.ok || !payload || payload.status === "error") {
+          throw new Error(payload?.message || "Opslaan van de rit is mislukt.");
+        }
+
+        return payload;
+      })
+      .then(result => {
+        const ids = Array.isArray(result) ? result : (result.ids || []);
         const rows = document.querySelectorAll("#tableBody tr");
         rows.forEach((row, index) => {
           let idField = row.querySelector(".rowId");
@@ -1624,7 +1680,10 @@ if (isset($_GET['action'])) {
           }
         });
       })
-      .catch(err => console.error("Fout bij opslaan:", err));
+      .catch(err => {
+        console.error("Fout bij opslaan:", err);
+        alert("Opslaan van de rit is mislukt: " + err.message);
+      });
     }
     
     // Aangepaste functie: als het veld 'Wijknaam' is ingevuld, stuur deze mee in de JSON-data
@@ -1858,7 +1917,6 @@ if (isset($_GET['action'])) {
       const newRow = buildRitRow({});
       tableBody.appendChild(newRow);
       updateChauffeurSelect();
-      autoSave();
     }
   </script>
 </body>
