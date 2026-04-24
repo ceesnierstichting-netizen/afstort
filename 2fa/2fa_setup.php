@@ -2,6 +2,7 @@
 require_once('session.php');
 require_once('config.php');
 require_once('twofa.php');
+require_once('qrcode.php');
 
 $user = twofa_get_pending_user($pdo);
 if (!$user) {
@@ -21,7 +22,14 @@ if (empty($_SESSION['pending_2fa_secret'])) {
 $secret = $_SESSION['pending_2fa_secret'];
 $setupKey = twofa_format_secret($secret);
 $otpauthUri = twofa_otpauth_uri($user['email'] ?: $user['naam'], $secret);
+$qrSvg = "";
 $error = "";
+
+try {
+    $qrSvg = qr_svg($otpauthUri);
+} catch (Exception $e) {
+    $qrSvg = "";
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $code = trim($_POST['code'] ?? '');
@@ -170,6 +178,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             word-break: break-word;
         }
 
+        .qr-wrap {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0 18px;
+        }
+
+        .qr-code {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: #fff;
+            padding: 12px;
+        }
+
+        .qr-code svg {
+            display: block;
+            width: min(220px, 68vw);
+            height: auto;
+        }
+
         textarea {
             width: 100%;
             min-height: 88px;
@@ -212,16 +239,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <ol class="steps">
             <li>Open Google Authenticator, Microsoft Authenticator, 1Password of Bitwarden.</li>
-            <li>Kies voor handmatig toevoegen of setup key invoeren.</li>
-            <li>Gebruik als accountnaam: <strong><?php echo htmlspecialchars($user['email'] ?: $user['naam']); ?></strong></li>
-            <li>Voer onderstaande sleutel in en vul daarna de 6-cijferige code in.</li>
+            <li>Kies voor QR-code scannen.</li>
+            <li>Scan onderstaande QR-code en vul daarna de 6-cijferige code in.</li>
         </ol>
 
-        <label>Setup key</label>
-        <code class="setup-key"><?php echo htmlspecialchars($setupKey); ?></code>
+        <?php if ($qrSvg !== ""): ?>
+            <div class="qr-wrap">
+                <div class="qr-code"><?php echo $qrSvg; ?></div>
+            </div>
+        <?php else: ?>
+            <p class="muted">De QR-code kon niet worden gemaakt. Gebruik de setup key hieronder.</p>
+        <?php endif; ?>
 
-        <p class="muted">Sommige apps kunnen ook een otpauth URI importeren. Gebruik die alleen in je eigen authenticator-app.</p>
-        <textarea readonly><?php echo htmlspecialchars($otpauthUri); ?></textarea>
+        <label>Setup key voor handmatige invoer</label>
+        <code class="setup-key"><?php echo htmlspecialchars($setupKey); ?></code>
 
         <form method="post" action="" novalidate>
             <label for="code">Controlecode</label>
