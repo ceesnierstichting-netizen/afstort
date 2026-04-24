@@ -1,7 +1,7 @@
 <?php
 // index.php
 
-session_start();
+require_once('session.php');
 
 $timeout = 1800;
 if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY'] > $timeout)) {
@@ -15,7 +15,7 @@ $_SESSION['LAST_ACTIVITY'] = time();
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-if (!isset($_SESSION['username'])) {
+if (!isset($_SESSION['username']) || empty($_SESSION['twofa_verified'])) {
     header("Location: login.php");
     exit();
 }

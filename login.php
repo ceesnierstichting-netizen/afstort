@@ -1,10 +1,15 @@
 <?php
-session_start();
+require_once('session.php');
 require_once('config.php');
+require_once('twofa.php');
 
-if (isset($_SESSION['fullAccess'])) {
+if (isset($_SESSION['fullAccess']) && !empty($_SESSION['twofa_verified'])) {
     header("Location: index.php");
     exit();
+}
+
+if (isset($_SESSION['fullAccess']) && empty($_SESSION['twofa_verified'])) {
+    unset($_SESSION['username'], $_SESSION['fullAccess'], $_SESSION['user_id']);
 }
 
 $error = "";
@@ -20,9 +25,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($user && password_verify($password, $user['wachtwoord'])) {
-            $_SESSION['username']   = $user['naam'];
-            $_SESSION['fullAccess'] = (bool)$user['fullAccess'];
-            header("Location: index.php");
+            twofa_start_pending_login($user);
+            if (!empty($user['twofa_enabled']) && !empty($user['twofa_secret'])) {
+                header("Location: 2fa_verify.php");
+            } else {
+                header("Location: 2fa_setup.php");
+            }
             exit();
         } else {
             $error = "Onjuist e-mail of wachtwoord.";
@@ -211,7 +219,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <input type="email" id="email" name="email" required autocomplete="email" value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>" autofocus>
                 <label for="password">Wachtwoord</label>
                 <input type="password" id="password" name="password" required autocomplete="current-password">
-                <div class="info">Vul jouw e-mailadres en wachtwoord in om veilig toegang te krijgen tot het dashboard.</div>
+                <div class="info">Na je wachtwoord volgt een controlecode uit je authenticator-app.</div>
                 <input type="submit" value="Inloggen">
             </form>
             <div class="forgot-password">

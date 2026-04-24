@@ -2,11 +2,11 @@
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-session_start();
+require_once('session.php');
 require_once('config.php');
 
-// Zorg dat de gebruiker is ingelogd (indien nodig)
-if (!isset($_SESSION['fullAccess'])) {
+// Zorg dat de gebruiker via 2FA is ingelogd
+if (!isset($_SESSION['fullAccess']) || empty($_SESSION['twofa_verified'])) {
     header("HTTP/1.1 401 Unauthorized");
     echo json_encode(["status" => "error", "message" => "Niet ingelogd."]);
     exit();

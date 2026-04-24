@@ -1,6 +1,6 @@
 <?php
 // form.php
-session_start();
+require_once('session.php');
 if (!headers_sent()) {
     header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex', true);
 }

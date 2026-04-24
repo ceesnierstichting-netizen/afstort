@@ -1,8 +1,8 @@
 <?php
-session_start();
+require_once('session.php');
 
-// Controleer of de gebruiker is ingelogd
-if (!isset($_SESSION['username'])) {
+// Controleer of de gebruiker via 2FA is ingelogd
+if (!isset($_SESSION['username']) || empty($_SESSION['twofa_verified'])) {
     header("Location: login.php");
     exit();
 }

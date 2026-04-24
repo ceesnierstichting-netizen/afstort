@@ -1,7 +1,12 @@
 <?php
 // emailCompose.php
-session_start();
+require_once('session.php');
 require_once 'config.php';
+
+if (empty($_SESSION['username']) || empty($_SESSION['twofa_verified'])) {
+    header("Location: login.php");
+    exit;
+}
 
 // Controleer of er een rit-ID is meegegeven
 if (!isset($_GET['id'])) {
