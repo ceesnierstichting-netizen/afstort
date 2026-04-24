@@ -3,15 +3,6 @@
 
 require_once('session.php');
 
-$timeout = 1800;
-if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY'] > $timeout)) {
-    session_unset();
-    session_destroy();
-    header("Location: login.php");
-    exit();
-}
-$_SESSION['LAST_ACTIVITY'] = time();
-
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -1021,7 +1012,7 @@ if (isset($_GET['action'])) {
   <script>
     const fullAccess = <?php echo json_encode($fullAccess); ?>;
     const username = <?php echo json_encode($username); ?>;
-    const inactivityTimeout = 1800 * 1000;
+    const inactivityTimeout = 3600 * 1000;
     let autoLogoutTimer;
     let currentConfirmRow = null;
     let saveTimer;

@@ -12,7 +12,7 @@ if (isset($_SESSION['fullAccess']) && empty($_SESSION['twofa_verified'])) {
     unset($_SESSION['username'], $_SESSION['fullAccess'], $_SESSION['user_id']);
 }
 
-$error = "";
+$error = isset($_GET['timeout']) ? "Je sessie is verlopen na 1 uur inactiviteit. Log opnieuw in." : "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email    = trim($_POST['email']);
     $password = trim($_POST['password']);
