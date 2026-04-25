@@ -46,17 +46,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $code = trim($_POST['twofa_code'] ?? $_POST['code'] ?? '');
     $matchedStep = null;
     $lastUsedStep = isset($user['twofa_last_used_step']) ? (int)$user['twofa_last_used_step'] : 0;
+    $emailMessage = "";
+    $emailCodeChecked = false;
 
     if ($mode === 'mail') {
-        $emailMessage = "";
+        $emailCodeChecked = true;
         if (twofa_verify_email_code($code, $emailMessage)) {
             twofa_finish_login($user);
             header("Location: index.php");
             exit();
         }
+    }
 
-        $error = $emailMessage;
-    } elseif (twofa_verify_code($user['twofa_secret'], $code, 1, $matchedStep)) {
+    if (twofa_verify_code($user['twofa_secret'], $code, 1, $matchedStep)) {
         if ($matchedStep <= $lastUsedStep) {
             $error = "Deze controlecode is al gebruikt. Wacht op een nieuwe code en probeer opnieuw.";
         } else {
@@ -76,7 +78,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         }
 
-        $error = "De controlecode klopt niet. Je kunt ook een herstelcode gebruiken.";
+        if (!$emailCodeChecked && preg_match('/^\D*\d\D*\d\D*\d\D*\d\D*\d\D*\d\D*$/', $code)) {
+            $emailCodeChecked = true;
+            if (twofa_verify_email_code($code, $emailMessage)) {
+                twofa_finish_login($user);
+                header("Location: index.php");
+                exit();
+            }
+        }
+
+        $error = ($mode === 'mail' && $emailMessage !== "")
+            ? $emailMessage
+            : "De controlecode klopt niet. Je kunt ook een herstelcode gebruiken.";
     }
 }
 ?>

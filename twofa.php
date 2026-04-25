@@ -116,7 +116,7 @@ function twofa_generate_code($secret, $timeSlice = null) {
 }
 
 function twofa_verify_code($secret, $code, $window = 1, &$matchedStep = null) {
-    $code = preg_replace('/\s+/', '', (string)$code);
+    $code = preg_replace('/\D+/', '', (string)$code);
     if (!preg_match('/^\d{' . TWOFA_DIGITS . '}$/', $code)) {
         return false;
     }
@@ -232,7 +232,7 @@ function twofa_clear_email_code() {
 }
 
 function twofa_verify_email_code($code, &$message = '') {
-    $code = preg_replace('/\s+/', '', (string)$code);
+    $code = preg_replace('/\D+/', '', (string)$code);
 
     if (empty($_SESSION['twofa_email_code_hash']) || empty($_SESSION['twofa_email_code_expires_at'])) {
         $message = "Vraag eerst een code per mail aan.";
@@ -269,7 +269,8 @@ function twofa_send_email_code($email, $code, $name = '') {
     $safeName = trim((string)$name);
     $greeting = $safeName !== '' ? "Hallo " . $safeName . "," : "Hallo,";
     $body = $greeting . "\n\n"
-        . "Je inlogcode is: " . $code . "\n\n"
+        . "Je inlogcode is:\n\n"
+        . $code . "\n\n"
         . "Deze code is 10 minuten geldig. Heb je niet geprobeerd in te loggen, dan kun je deze mail negeren.\n\n"
         . "Afstortverzoeken";
 
