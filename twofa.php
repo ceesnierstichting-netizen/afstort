@@ -4,6 +4,9 @@ const TWOFA_ISSUER = 'Afstortverzoeken';
 const TWOFA_PERIOD = 30;
 const TWOFA_DIGITS = 6;
 const TWOFA_PENDING_TTL = 600;
+const TWOFA_EMAIL_CODE_TTL = 600;
+const TWOFA_EMAIL_RESEND_SECONDS = 60;
+const TWOFA_EMAIL_MAX_ATTEMPTS = 5;
 
 function twofa_base32_encode($data) {
     $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -73,6 +76,16 @@ function twofa_random_bytes($length) {
 
 function twofa_generate_secret() {
     return rtrim(twofa_base32_encode(twofa_random_bytes(20)), '=');
+}
+
+function twofa_generate_email_code() {
+    if (function_exists('random_int')) {
+        return (string)random_int(100000, 999999);
+    }
+
+    $bytes = unpack('N', twofa_random_bytes(4));
+    $value = ($bytes[1] % 900000) + 100000;
+    return (string)$value;
 }
 
 function twofa_counter_to_binary($counter) {
@@ -177,6 +190,96 @@ function twofa_verify_recovery_code($code, $storedJson, &$updatedJson = null) {
     return false;
 }
 
+function twofa_mask_email($email) {
+    $email = (string)$email;
+    $parts = explode('@', $email, 2);
+    if (count($parts) !== 2) {
+        return $email;
+    }
+
+    $name = $parts[0];
+    $domain = $parts[1];
+    $first = $name !== '' ? $name[0] : '*';
+    return $first . str_repeat('*', max(2, strlen($name) - 1)) . '@' . $domain;
+}
+
+function twofa_can_send_email_code(&$waitSeconds = 0) {
+    $sentAt = (int)($_SESSION['twofa_email_code_sent_at'] ?? 0);
+    $elapsed = time() - $sentAt;
+
+    if ($sentAt > 0 && $elapsed < TWOFA_EMAIL_RESEND_SECONDS) {
+        $waitSeconds = TWOFA_EMAIL_RESEND_SECONDS - $elapsed;
+        return false;
+    }
+
+    return true;
+}
+
+function twofa_store_email_code($code) {
+    $_SESSION['twofa_email_code_hash'] = password_hash((string)$code, PASSWORD_DEFAULT);
+    $_SESSION['twofa_email_code_expires_at'] = time() + TWOFA_EMAIL_CODE_TTL;
+    $_SESSION['twofa_email_code_sent_at'] = time();
+    $_SESSION['twofa_email_code_attempts'] = 0;
+}
+
+function twofa_clear_email_code() {
+    unset(
+        $_SESSION['twofa_email_code_hash'],
+        $_SESSION['twofa_email_code_expires_at'],
+        $_SESSION['twofa_email_code_sent_at'],
+        $_SESSION['twofa_email_code_attempts']
+    );
+}
+
+function twofa_verify_email_code($code, &$message = '') {
+    $code = preg_replace('/\s+/', '', (string)$code);
+
+    if (empty($_SESSION['twofa_email_code_hash']) || empty($_SESSION['twofa_email_code_expires_at'])) {
+        $message = "Vraag eerst een code per mail aan.";
+        return false;
+    }
+
+    if (time() > (int)$_SESSION['twofa_email_code_expires_at']) {
+        twofa_clear_email_code();
+        $message = "De code per mail is verlopen. Vraag een nieuwe code aan.";
+        return false;
+    }
+
+    $attempts = (int)($_SESSION['twofa_email_code_attempts'] ?? 0);
+    if ($attempts >= TWOFA_EMAIL_MAX_ATTEMPTS) {
+        twofa_clear_email_code();
+        $message = "Er zijn te veel pogingen gedaan. Vraag een nieuwe code per mail aan.";
+        return false;
+    }
+
+    $_SESSION['twofa_email_code_attempts'] = $attempts + 1;
+
+    if (preg_match('/^\d{6}$/', $code) && password_verify($code, $_SESSION['twofa_email_code_hash'])) {
+        twofa_clear_email_code();
+        $message = "";
+        return true;
+    }
+
+    $message = "De code per mail klopt niet.";
+    return false;
+}
+
+function twofa_send_email_code($email, $code, $name = '') {
+    $subject = "Je inlogcode voor Afstortverzoeken";
+    $safeName = trim((string)$name);
+    $greeting = $safeName !== '' ? "Hallo " . $safeName . "," : "Hallo,";
+    $body = $greeting . "\n\n"
+        . "Je inlogcode is: " . $code . "\n\n"
+        . "Deze code is 10 minuten geldig. Heb je niet geprobeerd in te loggen, dan kun je deze mail negeren.\n\n"
+        . "Afstortverzoeken";
+
+    $headers = "From: noreply@nierstichtingnederland.nl\r\n"
+        . "Reply-To: noreply@nierstichtingnederland.nl\r\n"
+        . "Content-Type: text/plain; charset=UTF-8\r\n";
+
+    return mail($email, $subject, $body, $headers);
+}
+
 function twofa_start_pending_login(array $user) {
     session_regenerate_id(true);
     unset(
@@ -184,7 +287,11 @@ function twofa_start_pending_login(array $user) {
         $_SESSION['fullAccess'],
         $_SESSION['user_id'],
         $_SESSION['twofa_verified'],
-        $_SESSION['pending_2fa_secret']
+        $_SESSION['pending_2fa_secret'],
+        $_SESSION['twofa_email_code_hash'],
+        $_SESSION['twofa_email_code_expires_at'],
+        $_SESSION['twofa_email_code_sent_at'],
+        $_SESSION['twofa_email_code_attempts']
     );
     $_SESSION['pending_2fa_user_id'] = (int)$user['id'];
     $_SESSION['pending_2fa_started_at'] = time();
@@ -211,7 +318,11 @@ function twofa_clear_pending_login() {
     unset(
         $_SESSION['pending_2fa_user_id'],
         $_SESSION['pending_2fa_started_at'],
-        $_SESSION['pending_2fa_secret']
+        $_SESSION['pending_2fa_secret'],
+        $_SESSION['twofa_email_code_hash'],
+        $_SESSION['twofa_email_code_expires_at'],
+        $_SESSION['twofa_email_code_sent_at'],
+        $_SESSION['twofa_email_code_attempts']
     );
 }
 

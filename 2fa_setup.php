@@ -32,7 +32,7 @@ try {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $code = trim($_POST['code'] ?? '');
+    $code = trim($_POST['twofa_code'] ?? $_POST['code'] ?? '');
     $matchedStep = null;
 
     if (twofa_verify_code($secret, $code, 1, $matchedStep)) {
@@ -255,8 +255,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <code class="setup-key"><?php echo htmlspecialchars($setupKey); ?></code>
 
         <form method="post" action="" novalidate>
-            <label for="code">Controlecode</label>
-            <input type="text" id="code" name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" autofocus>
+            <label for="twofa_code">Controlecode</label>
+            <input
+                type="text"
+                id="twofa_code"
+                name="twofa_code"
+                required
+                inputmode="numeric"
+                autocomplete="off"
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+                pattern="[0-9]*"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-bwignore="true"
+                data-form-type="other"
+                autofocus>
             <button type="submit">2FA activeren</button>
         </form>
     </main>
