@@ -7,9 +7,11 @@ if (!isset($_SESSION['username']) || empty($_SESSION['twofa_verified'])) {
     exit();
 }
 
-$fullAccess = $_SESSION['fullAccess'] ?? false;
-$username   = $_SESSION['username'];
 require_once('config.php');
+refreshCurrentUserAccess($pdo);
+
+$fullAccess = !empty($_SESSION['fullAccess']);
+$username   = $_SESSION['username'];
 
 // Haal alleen afgeronde ritten op (status "Afgehandeld")
 if ($fullAccess) {

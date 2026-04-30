@@ -2,6 +2,7 @@
 // index.php
 
 require_once('session.php');
+require_once('config.php');
 
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
@@ -11,18 +12,17 @@ if (!isset($_SESSION['username']) || empty($_SESSION['twofa_verified'])) {
     exit();
 }
 
-$fullAccess = $_SESSION['fullAccess'] ?? false;
-$username   = $_SESSION['username'] ?? '';
-$isAdmin    = ($username === 'Admin');
+refreshCurrentUserAccess($pdo);
 
-require_once('config.php');
+$fullAccess = !empty($_SESSION['fullAccess']);
+$username   = $_SESSION['username'] ?? '';
 
 if (isset($_GET['action'])) {
     $action = $_GET['action'];
     
     if ($action === 'loadRitten') {
         header('Content-Type: application/json');
-        if ($username !== 'Admin') {
+        if (!$fullAccess) {
             $stmt = $pdo->prepare("SELECT * FROM ritten WHERE chauffeur = :username OR chauffeur = '' OR chauffeur IS NULL OR chauffeur = 'Chauffeur kiezen' OR chauffeur = '-- Kies een chauffeur --'");
             $stmt->execute([':username' => $username]);
         } else {
@@ -85,10 +85,10 @@ if (isset($_GET['action'])) {
                     continue;
                 }
 
-                if ($postcodePlaats !== '' && function_exists('geocodePostcode')) {
-                    $pc4 = substr($postcodePlaats, 0, 4);
-                    if (preg_match('/^[0-9]{4}$/', $pc4)) {
-                        list($latTmp, $lonTmp) = geocodePostcode($pc4);
+                if ($postcodePlaats !== '' && function_exists('extractPostcode6') && function_exists('geocodePostcode')) {
+                    $pc6 = extractPostcode6($postcodePlaats);
+                    if ($pc6) {
+                        list($latTmp, $lonTmp) = geocodePostcode($pc6);
                         if ($latTmp !== null && $lonTmp !== null) {
                             $lat = (float)$latTmp;
                             $lon = (float)$lonTmp;
@@ -205,7 +205,7 @@ if (isset($_GET['action'])) {
         
     } elseif ($action === 'loadChauffeurs') {
         header('Content-Type: application/json');
-        if ($username !== 'Admin') {
+        if (!$fullAccess) {
             $stmt = $pdo->prepare("SELECT naam, email FROM chauffeurs WHERE naam = :username");
             $stmt->execute([':username' => $username]);
         } else {
@@ -238,14 +238,14 @@ if (isset($_GET['action'])) {
 
         $wachtwoord = password_hash($wachtwoordInput, PASSWORD_DEFAULT);
 
-        // Postcode (optioneel) en lat/lon bepalen op basis van pc4
+        // Postcode (optioneel) en lat/lon bepalen op basis van pc6
         $postcode = trim($data['postcode'] ?? '');
         $lat = null;
         $lon = null;
-        if ($postcode !== '' && function_exists('extractPostcode4') && function_exists('geocodePostcode')) {
-            $pc4 = extractPostcode4($postcode);
-            if ($pc4) {
-                list($latTmp, $lonTmp) = geocodePostcode($pc4);
+        if ($postcode !== '' && function_exists('extractPostcode6') && function_exists('geocodePostcode')) {
+            $pc6 = extractPostcode6($postcode);
+            if ($pc6) {
+                list($latTmp, $lonTmp) = geocodePostcode($pc6);
                 if ($latTmp !== null && $lonTmp !== null) {
                     $lat = (float)$latTmp;
                     $lon = (float)$lonTmp;
@@ -286,10 +286,10 @@ if (isset($_GET['action'])) {
         $lat = null;
         $lon = null;
 
-        if ($postcode !== '' && function_exists('extractPostcode4') && function_exists('geocodePostcode')) {
-            $pc4 = extractPostcode4($postcode);
-            if ($pc4) {
-                list($latTmp, $lonTmp) = geocodePostcode($pc4);
+        if ($postcode !== '' && function_exists('extractPostcode6') && function_exists('geocodePostcode')) {
+            $pc6 = extractPostcode6($postcode);
+            if ($pc6) {
+                list($latTmp, $lonTmp) = geocodePostcode($pc6);
                 if ($latTmp !== null && $lonTmp !== null) {
                     $lat = (float)$latTmp;
                     $lon = (float)$lonTmp;
@@ -324,9 +324,9 @@ if (isset($_GET['action'])) {
     } elseif ($action === 'rebuildAllGeocodes') {
         header('Content-Type: application/json');
 
-        if (!$isAdmin) {
+        if (!$fullAccess) {
             http_response_code(403);
-            echo json_encode(['status' => 'error', 'message' => 'Alleen Admin mag deze actie uitvoeren.']);
+            echo json_encode(['status' => 'error', 'message' => 'Alleen gebruikers met Full Access mogen deze actie uitvoeren.']);
             exit();
         }
 
@@ -345,10 +345,10 @@ if (isset($_GET['action'])) {
             $lat = null;
             $lon = null;
 
-            if ($postcodePlaats !== '' && function_exists('geocodePostcode')) {
-                $pc4 = substr($postcodePlaats, 0, 4);
-                if (preg_match('/^[0-9]{4}$/', $pc4)) {
-                    list($latTmp, $lonTmp) = geocodePostcode($pc4);
+            if ($postcodePlaats !== '' && function_exists('extractPostcode6') && function_exists('geocodePostcode')) {
+                $pc6 = extractPostcode6($postcodePlaats);
+                if ($pc6) {
+                    list($latTmp, $lonTmp) = geocodePostcode($pc6);
                     if ($latTmp !== null && $lonTmp !== null) {
                         $lat = (float)$latTmp;
                         $lon = (float)$lonTmp;
@@ -378,10 +378,10 @@ if (isset($_GET['action'])) {
             $lat = null;
             $lon = null;
 
-            if ($postcode !== '' && function_exists('extractPostcode4') && function_exists('geocodePostcode')) {
-                $pc4 = extractPostcode4($postcode);
-                if ($pc4) {
-                    list($latTmp, $lonTmp) = geocodePostcode($pc4);
+            if ($postcode !== '' && function_exists('extractPostcode6') && function_exists('geocodePostcode')) {
+                $pc6 = extractPostcode6($postcode);
+                if ($pc6) {
+                    list($latTmp, $lonTmp) = geocodePostcode($pc6);
                     if ($latTmp !== null && $lonTmp !== null) {
                         $lat = (float)$latTmp;
                         $lon = (float)$lonTmp;
@@ -906,7 +906,7 @@ if (isset($_GET['action'])) {
         <input type="password" id="newChauffeurPassword" placeholder="Wachtwoord (8k/1getal/1leesteken)">
       </div>
       <button id="add-chauffeur-button" onclick="addChauffeur()">Voeg chauffeur toe</button>
-      <?php if ($isAdmin): ?>
+      <?php if ($fullAccess): ?>
       <button id="rebuild-geo-button" onclick="rebuildAllGeocodes()">Herbereken lat/lon (ritten + chauffeurs)</button>
       <?php endif; ?>
     </section>
@@ -1888,7 +1888,7 @@ if (isset($_GET['action'])) {
     <?php endif; ?>
     
     function openRapport() {
-      if (username !== "Admin") {
+      if (!fullAccess) {
         window.open("createRapport.php?username=" + encodeURIComponent(username) + "&status=Afgehandeld", "_blank");
       } else {
         window.open("createRapport.php?status=Afgehandeld", "_blank");

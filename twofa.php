@@ -330,7 +330,7 @@ function twofa_clear_pending_login() {
 function twofa_finish_login(array $user) {
     session_regenerate_id(true);
     $_SESSION['username'] = $user['naam'];
-    $_SESSION['fullAccess'] = (bool)$user['fullAccess'];
+    $_SESSION['fullAccess'] = normalizeFullAccess($user['fullAccess']);
     $_SESSION['user_id'] = (int)$user['id'];
     $_SESSION['twofa_verified'] = true;
     $_SESSION['LAST_ACTIVITY'] = time();
