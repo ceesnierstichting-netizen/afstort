@@ -100,6 +100,37 @@ if (!function_exists('shouldReuseStoredCoordinates')) {
     }
 }
 
+if (!function_exists('isMobileUserAgent')) {
+    function isMobileUserAgent($userAgent = null) {
+        $userAgent = strtolower((string)($userAgent ?? ($_SERVER['HTTP_USER_AGENT'] ?? '')));
+        if ($userAgent === '') {
+            return false;
+        }
+
+        return (bool)preg_match('/android|iphone|ipad|ipod|mobile|blackberry|opera mini|windows phone/', $userAgent);
+    }
+}
+
+if (!function_exists('getPreferredAppView')) {
+    function getPreferredAppView() {
+        return $_COOKIE['afstort_view'] ?? '';
+    }
+}
+
+if (!function_exists('shouldUseMobileDriverView')) {
+    function shouldUseMobileDriverView($fullAccess) {
+        if ($fullAccess) {
+            return false;
+        }
+
+        if (getPreferredAppView() === 'desktop') {
+            return false;
+        }
+
+        return isMobileUserAgent();
+    }
+}
+
 function refreshCurrentUserAccess(PDO $pdo) {
     if (session_status() !== PHP_SESSION_ACTIVE || empty($_SESSION['twofa_verified'])) {
         return;

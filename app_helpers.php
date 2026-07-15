@@ -57,3 +57,28 @@ function shouldReuseStoredCoordinates($newPostcodeValue, $existingPostcodeValue)
 
     return $newNormalized !== '' && $newNormalized === $existingNormalized;
 }
+
+function isMobileUserAgent($userAgent = null) {
+    $userAgent = strtolower((string)($userAgent ?? ($_SERVER['HTTP_USER_AGENT'] ?? '')));
+    if ($userAgent === '') {
+        return false;
+    }
+
+    return (bool)preg_match('/android|iphone|ipad|ipod|mobile|blackberry|opera mini|windows phone/', $userAgent);
+}
+
+function getPreferredAppView() {
+    return $_COOKIE['afstort_view'] ?? '';
+}
+
+function shouldUseMobileDriverView($fullAccess) {
+    if ($fullAccess) {
+        return false;
+    }
+
+    if (getPreferredAppView() === 'desktop') {
+        return false;
+    }
+
+    return isMobileUserAgent();
+}
