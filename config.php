@@ -2,6 +2,8 @@
 // config.php
 // Database configuratie (geen session_start hier)
 
+require_once __DIR__ . '/app_helpers.php';
+
 function sendNoIndexHeaders() {
     if (!headers_sent()) {
         header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex', true);
@@ -34,34 +36,6 @@ try {
     die('Database connectie mislukt: ' . $e->getMessage());
 }
 
-function normalizeFullAccess($value) {
-    if (is_bool($value)) {
-        return $value;
-    }
-
-    if (is_int($value) || is_float($value)) {
-        return ((int)$value) !== 0;
-    }
-
-    if (is_string($value)) {
-        if (strlen($value) === 1) {
-            $byteValue = ord($value);
-            if ($byteValue === 0 || $byteValue === 1) {
-                return $byteValue === 1;
-            }
-        }
-
-        $clean = strtolower(trim($value));
-        if (is_numeric($clean)) {
-            return ((int)$clean) !== 0;
-        }
-
-        return in_array($clean, ['true', 'yes', 'ja', 'on', 'x'], true);
-    }
-
-    return false;
-}
-
 function refreshCurrentUserAccess(PDO $pdo) {
     if (session_status() !== PHP_SESSION_ACTIVE || empty($_SESSION['twofa_verified'])) {
         return;
@@ -70,13 +44,19 @@ function refreshCurrentUserAccess(PDO $pdo) {
     $user = null;
 
     if (!empty($_SESSION['user_id'])) {
-        $stmt = $pdo->prepare("SELECT id, naam, fullAccess FROM chauffeurs WHERE id = ? LIMIT 1");
+        $stmt = $pdo->prepare("SELECT id, naam, email, fullAccess FROM chauffeurs WHERE id = ? LIMIT 1");
         $stmt->execute([(int)$_SESSION['user_id']]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
+    if (!$user && !empty($_SESSION['user_email'])) {
+        $stmt = $pdo->prepare("SELECT id, naam, email, fullAccess FROM chauffeurs WHERE email = ? LIMIT 1");
+        $stmt->execute([$_SESSION['user_email']]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
     if (!$user && !empty($_SESSION['username'])) {
-        $stmt = $pdo->prepare("SELECT id, naam, fullAccess FROM chauffeurs WHERE naam = ? LIMIT 1");
+        $stmt = $pdo->prepare("SELECT id, naam, email, fullAccess FROM chauffeurs WHERE naam = ? LIMIT 1");
         $stmt->execute([$_SESSION['username']]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
     }
@@ -84,6 +64,7 @@ function refreshCurrentUserAccess(PDO $pdo) {
     if ($user) {
         $_SESSION['user_id'] = (int)$user['id'];
         $_SESSION['username'] = $user['naam'];
+        $_SESSION['user_email'] = $user['email'];
         $_SESSION['fullAccess'] = normalizeFullAccess($user['fullAccess']);
     }
 }
@@ -141,19 +122,6 @@ function geocodePostcode($postcode) {
     }
 
     return [floatval($data[0]['lat']), floatval($data[0]['lon'])];
-}
-
-/**
- * Haal Nederlandse postcode met 6 posities (1234AB) uit een string
- * zoals '1234 AB Amsterdam'.
- */
-function extractPostcode6($str) {
-    if (!$str) return '';
-
-    if (preg_match('/([0-9]{4})\s*([A-Za-z]{2})/', trim($str), $m)) {
-        return strtoupper($m[1] . $m[2]);
-    }
-    return '';
 }
 
 ?>

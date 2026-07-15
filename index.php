@@ -17,6 +17,25 @@ refreshCurrentUserAccess($pdo);
 $fullAccess = !empty($_SESSION['fullAccess']);
 $username   = $_SESSION['username'] ?? '';
 
+function resolveCoordinatesFromPostcodeInput($postcodeValue) {
+    $postcodeValue = trim((string)$postcodeValue);
+    if ($postcodeValue === '' || !function_exists('extractPostcode6') || !function_exists('geocodePostcode')) {
+        return [null, null];
+    }
+
+    $pc6 = extractPostcode6($postcodeValue);
+    if ($pc6 === '') {
+        return [null, null];
+    }
+
+    list($latTmp, $lonTmp) = geocodePostcode($pc6);
+    if ($latTmp === null || $lonTmp === null) {
+        return [null, null];
+    }
+
+    return [(float)$latTmp, (float)$lonTmp];
+}
+
 if (isset($_GET['action'])) {
     $action = $_GET['action'];
     
@@ -85,22 +104,18 @@ if (isset($_GET['action'])) {
                     continue;
                 }
 
-                if ($postcodePlaats !== '' && function_exists('extractPostcode6') && function_exists('geocodePostcode')) {
-                    $pc6 = extractPostcode6($postcodePlaats);
-                    if ($pc6) {
-                        list($latTmp, $lonTmp) = geocodePostcode($pc6);
-                        if ($latTmp !== null && $lonTmp !== null) {
-                            $lat = (float)$latTmp;
-                            $lon = (float)$lonTmp;
-                        }
-                    }
-                }
+                list($lat, $lon) = resolveCoordinatesFromPostcodeInput($postcodePlaats);
 
                 if (isset($rit['id']) && !empty($rit['id'])) {
                     $stmtLoadRitGeo->execute([':id' => $rit['id']]);
                     $existingRit = $stmtLoadRitGeo->fetch(PDO::FETCH_ASSOC);
 
-                    if ($existingRit && $lat === null && $lon === null) {
+                    if (
+                        $existingRit &&
+                        $lat === null &&
+                        $lon === null &&
+                        shouldReuseStoredCoordinates($postcodePlaats, $existingRit['postcodePlaats'] ?? '')
+                    ) {
                         $lat = isset($existingRit['lat']) && $existingRit['lat'] !== '' ? (float)$existingRit['lat'] : null;
                         $lon = isset($existingRit['lon']) && $existingRit['lon'] !== '' ? (float)$existingRit['lon'] : null;
                     }
@@ -217,6 +232,11 @@ if (isset($_GET['action'])) {
         
     } elseif ($action === 'addChauffeur') {
         header('Content-Type: text/plain');
+        if (!$fullAccess) {
+            http_response_code(403);
+            echo "Alleen gebruikers met Full Access mogen chauffeurs toevoegen.";
+            exit();
+        }
         $data = json_decode(file_get_contents('php://input'), true);
         $naam = trim($data['chauffeur']);
         $email = trim($data['email'] ?? '');
@@ -240,18 +260,7 @@ if (isset($_GET['action'])) {
 
         // Postcode (optioneel) en lat/lon bepalen op basis van pc6
         $postcode = trim($data['postcode'] ?? '');
-        $lat = null;
-        $lon = null;
-        if ($postcode !== '' && function_exists('extractPostcode6') && function_exists('geocodePostcode')) {
-            $pc6 = extractPostcode6($postcode);
-            if ($pc6) {
-                list($latTmp, $lonTmp) = geocodePostcode($pc6);
-                if ($latTmp !== null && $lonTmp !== null) {
-                    $lat = (float)$latTmp;
-                    $lon = (float)$lonTmp;
-                }
-            }
-        }
+        list($lat, $lon) = resolveCoordinatesFromPostcodeInput($postcode);
 
         $stmt = $pdo->prepare("INSERT INTO chauffeurs (naam, email, wachtwoord, IBAN, postcode, lat, lon) VALUES (:naam, :email, :wachtwoord, :IBAN, :postcode, :lat, :lon)");
         if ($stmt->execute([
@@ -279,25 +288,29 @@ if (isset($_GET['action'])) {
         
     } elseif ($action === 'updateChauffeur') {
         header('Content-Type: text/plain');
+        if (!$fullAccess) {
+            http_response_code(403);
+            echo "Alleen gebruikers met Full Access mogen chauffeurs wijzigen.";
+            exit();
+        }
         $data = json_decode(file_get_contents('php://input'), true);
         $naam = trim($data['chauffeur']);
         $email = trim($data['email'] ?? '');
         $postcode = trim($data['postcode'] ?? '');
-        $lat = null;
-        $lon = null;
-
-        if ($postcode !== '' && function_exists('extractPostcode6') && function_exists('geocodePostcode')) {
-            $pc6 = extractPostcode6($postcode);
-            if ($pc6) {
-                list($latTmp, $lonTmp) = geocodePostcode($pc6);
-                if ($latTmp !== null && $lonTmp !== null) {
-                    $lat = (float)$latTmp;
-                    $lon = (float)$lonTmp;
-                }
-            }
-        }
+        list($lat, $lon) = resolveCoordinatesFromPostcodeInput($postcode);
 
         if ($naam !== "") {
+            if ($lat === null && $lon === null) {
+                $stmtExisting = $pdo->prepare("SELECT postcode, lat, lon FROM chauffeurs WHERE naam = :naam LIMIT 1");
+                $stmtExisting->execute([':naam' => $naam]);
+                $existingChauffeur = $stmtExisting->fetch(PDO::FETCH_ASSOC);
+
+                if ($existingChauffeur && shouldReuseStoredCoordinates($postcode, $existingChauffeur['postcode'] ?? '')) {
+                    $lat = isset($existingChauffeur['lat']) && $existingChauffeur['lat'] !== '' ? (float)$existingChauffeur['lat'] : null;
+                    $lon = isset($existingChauffeur['lon']) && $existingChauffeur['lon'] !== '' ? (float)$existingChauffeur['lon'] : null;
+                }
+            }
+
             $stmt = $pdo->prepare("UPDATE chauffeurs SET email = :email, postcode = :postcode, lat = :lat, lon = :lon WHERE naam = :naam");
             echo $stmt->execute([':email' => $email, ':postcode' => $postcode, ':lat' => $lat, ':lon' => $lon, ':naam' => $naam])
                 ? "Email bijgewerkt voor chauffeur."
@@ -309,6 +322,11 @@ if (isset($_GET['action'])) {
         
     } elseif ($action === 'deleteChauffeur') {
         header('Content-Type: text/plain');
+        if (!$fullAccess) {
+            http_response_code(403);
+            echo "Alleen gebruikers met Full Access mogen chauffeurs verwijderen.";
+            exit();
+        }
         $data = json_decode(file_get_contents('php://input'), true);
         $naam = trim($data['chauffeur']);
         if ($naam !== "") {
@@ -345,16 +363,7 @@ if (isset($_GET['action'])) {
             $lat = null;
             $lon = null;
 
-            if ($postcodePlaats !== '' && function_exists('extractPostcode6') && function_exists('geocodePostcode')) {
-                $pc6 = extractPostcode6($postcodePlaats);
-                if ($pc6) {
-                    list($latTmp, $lonTmp) = geocodePostcode($pc6);
-                    if ($latTmp !== null && $lonTmp !== null) {
-                        $lat = (float)$latTmp;
-                        $lon = (float)$lonTmp;
-                    }
-                }
-            }
+            list($lat, $lon) = resolveCoordinatesFromPostcodeInput($postcodePlaats);
 
             if ($lat === null || $lon === null) {
                 $result['ritten']['skipped']++;
@@ -378,16 +387,7 @@ if (isset($_GET['action'])) {
             $lat = null;
             $lon = null;
 
-            if ($postcode !== '' && function_exists('extractPostcode6') && function_exists('geocodePostcode')) {
-                $pc6 = extractPostcode6($postcode);
-                if ($pc6) {
-                    list($latTmp, $lonTmp) = geocodePostcode($pc6);
-                    if ($latTmp !== null && $lonTmp !== null) {
-                        $lat = (float)$latTmp;
-                        $lon = (float)$lonTmp;
-                    }
-                }
-            }
+            list($lat, $lon) = resolveCoordinatesFromPostcodeInput($postcode);
 
             if ($lat === null || $lon === null) {
                 $result['chauffeurs']['skipped']++;
@@ -1206,9 +1206,32 @@ if (isset($_GET['action'])) {
         });
     }
     
+    function fetchChauffeursData() {
+      return fetch(buildUrl("loadChauffeurs"))
+        .then(async response => {
+          const text = await response.text();
+          let payload = [];
+
+          try {
+            payload = text ? JSON.parse(text) : [];
+          } catch (err) {
+            throw new Error(text || "Onleesbare serverrespons.");
+          }
+
+          if (!response.ok) {
+            throw new Error(payload?.message || "Laden van chauffeurs is mislukt.");
+          }
+
+          if (!Array.isArray(payload)) {
+            throw new Error(payload?.message || "Onverwachte respons bij laden chauffeurs.");
+          }
+
+          return payload;
+        });
+    }
+
     function loadChauffeurs() {
-      fetch(buildUrl("loadChauffeurs"))
-        .then(response => response.json())
+      fetchChauffeursData()
         .then(data => {
           <?php if ($fullAccess): ?>
           const chauffeurList = document.getElementById("chauffeurList");
@@ -1230,8 +1253,7 @@ if (isset($_GET['action'])) {
     
     function updateChauffeurSelect() {
       const selects = document.querySelectorAll("select[data-field='chauffeur']");
-      fetch(buildUrl("loadChauffeurs"))
-        .then(response => response.json())
+      fetchChauffeursData()
         .then(data => {
           selects.forEach(select => {
             const currentValueRaw = select.getAttribute("data-selected") || "";
@@ -1856,9 +1878,15 @@ if (isset($_GET['action'])) {
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({ chauffeur: chauffeurName, postcode: chauffeurPostcode, email: chauffeurEmail, IBAN: chauffeurIBAN, wachtwoord: chauffeurPassword })
       })
-      .then(response => response.text())
+      .then(async response => {
+        const text = await response.text();
+        if (!response.ok) {
+          throw new Error(text || "Toevoegen van chauffeur is mislukt.");
+        }
+        return text;
+      })
       .then(text => { alert(text); loadChauffeurs(); })
-      .catch(err => { console.error("Fout bij toevoegen chauffeur:", err); });
+      .catch(err => { console.error("Fout bij toevoegen chauffeur:", err); alert(err.message); });
     }
     function rebuildAllGeocodes() {
       if (!confirm("Weet je zeker dat je alle lat/lon opnieuw wilt laten berekenen?")) return;

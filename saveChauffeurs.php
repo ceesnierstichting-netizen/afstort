@@ -5,8 +5,8 @@ error_reporting(E_ALL);
 require_once('session.php');
 require_once('config.php');
 
-// Controleer of de gebruiker via 2FA is ingelogd
-if (!isset($_SESSION['fullAccess']) || empty($_SESSION['twofa_verified'])) {
+// Alleen Full Access-gebruikers mogen chauffeurs bulk opslaan
+if (empty($_SESSION['fullAccess']) || empty($_SESSION['twofa_verified'])) {
     header("HTTP/1.1 401 Unauthorized");
     echo json_encode(["status" => "error", "message" => "Niet ingelogd."]);
     exit();
@@ -23,25 +23,43 @@ if (!$data) {
     exit;
 }
 
+function resolveCoordinatesForSavedChauffeur($postcode) {
+    $postcode = trim((string)$postcode);
+    if ($postcode === '' || !function_exists('extractPostcode6') || !function_exists('geocodePostcode')) {
+        return [null, null];
+    }
+
+    $pc6 = extractPostcode6($postcode);
+    if ($pc6 === '') {
+        return [null, null];
+    }
+
+    list($latTmp, $lonTmp) = geocodePostcode($pc6);
+    if ($latTmp === null || $lonTmp === null) {
+        return [null, null];
+    }
+
+    return [(float)$latTmp, (float)$lonTmp];
+}
+
+$stmtExistingChauffeur = $pdo->prepare("SELECT postcode, lat, lon FROM chauffeurs WHERE id = :id");
 $ids = [];
 foreach ($data as $i => $chauffeur) {
     $postcode = trim($chauffeur['postcode'] ?? '');
-    $lat = null;
-    $lon = null;
-
-    if ($postcode !== '' && function_exists('extractPostcode6') && function_exists('geocodePostcode')) {
-        $pc6 = extractPostcode6($postcode);
-        if ($pc6) {
-            list($latTmp, $lonTmp) = geocodePostcode($pc6);
-            if ($latTmp !== null && $lonTmp !== null) {
-                $lat = (float)$latTmp;
-                $lon = (float)$lonTmp;
-            }
-        }
-    }
+    list($lat, $lon) = resolveCoordinatesForSavedChauffeur($postcode);
 
     // Verwacht dat de gegevens 'naam' en 'email' bevatten. Indien er een 'id' aanwezig is, wordt deze geüpdatet.
     if (isset($chauffeur['id']) && !empty($chauffeur['id'])) {
+        if ($lat === null && $lon === null) {
+            $stmtExistingChauffeur->execute([':id' => $chauffeur['id']]);
+            $existingChauffeur = $stmtExistingChauffeur->fetch(PDO::FETCH_ASSOC);
+
+            if ($existingChauffeur && shouldReuseStoredCoordinates($postcode, $existingChauffeur['postcode'] ?? '')) {
+                $lat = isset($existingChauffeur['lat']) && $existingChauffeur['lat'] !== '' ? (float)$existingChauffeur['lat'] : null;
+                $lon = isset($existingChauffeur['lon']) && $existingChauffeur['lon'] !== '' ? (float)$existingChauffeur['lon'] : null;
+            }
+        }
+
         $stmt = $pdo->prepare("UPDATE chauffeurs SET 
             naam = :naam,
             email = :email,
