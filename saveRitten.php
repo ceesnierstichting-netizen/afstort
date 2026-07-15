@@ -23,6 +23,26 @@ if (!$data) {
     exit;
 }
 
+function resolveCoordinatesForSavedRit($postcodePlaats) {
+    $postcodePlaats = trim((string)$postcodePlaats);
+    if ($postcodePlaats === '' || !function_exists('extractPostcode6') || !function_exists('geocodePostcode')) {
+        return [null, null];
+    }
+
+    $pc6 = extractPostcode6($postcodePlaats);
+    if ($pc6 === '') {
+        return [null, null];
+    }
+
+    list($latTmp, $lonTmp) = geocodePostcode($pc6);
+    if ($latTmp === null || $lonTmp === null) {
+        return [null, null];
+    }
+
+    return [(float)$latTmp, (float)$lonTmp];
+}
+
+$stmtExistingRit = $pdo->prepare("SELECT postcodePlaats, lat, lon FROM ritten WHERE id = :id");
 $ids = [];
 foreach ($data as $i => $rit) {
     // Zorg dat gebiedsnummer aanwezig is, anders een lege string
@@ -30,22 +50,20 @@ foreach ($data as $i => $rit) {
     $postcodePlaats = trim($rit['postcodePlaats'] ?? '');
     // Reken het aantal gereden kilometers af
     $gereden = isset($rit['gereden']) && $rit['gereden'] !== "" ? intval(round($rit['gereden'])) : 0;
-    $lat = null;
-    $lon = null;
-
-    if ($postcodePlaats !== '' && function_exists('extractPostcode6') && function_exists('geocodePostcode')) {
-        $pc6 = extractPostcode6($postcodePlaats);
-        if ($pc6) {
-            list($latTmp, $lonTmp) = geocodePostcode($pc6);
-            if ($latTmp !== null && $lonTmp !== null) {
-                $lat = (float)$latTmp;
-                $lon = (float)$lonTmp;
-            }
-        }
-    }
+    list($lat, $lon) = resolveCoordinatesForSavedRit($postcodePlaats);
     
     // Als er een ID is, gaat het om een update; anders een insert.
     if (isset($rit['id']) && !empty($rit['id'])) {
+        if ($lat === null && $lon === null) {
+            $stmtExistingRit->execute([':id' => $rit['id']]);
+            $existingRit = $stmtExistingRit->fetch(PDO::FETCH_ASSOC);
+
+            if ($existingRit && shouldReuseStoredCoordinates($postcodePlaats, $existingRit['postcodePlaats'] ?? '')) {
+                $lat = isset($existingRit['lat']) && $existingRit['lat'] !== '' ? (float)$existingRit['lat'] : null;
+                $lon = isset($existingRit['lon']) && $existingRit['lon'] !== '' ? (float)$existingRit['lon'] : null;
+            }
+        }
+
         $stmt = $pdo->prepare("UPDATE ritten SET 
             collectegebied       = :collectegebied,
             wijknaam             = :wijknaam,

@@ -9,7 +9,7 @@ if (isset($_SESSION['fullAccess']) && !empty($_SESSION['twofa_verified'])) {
 }
 
 if (isset($_SESSION['fullAccess']) && empty($_SESSION['twofa_verified'])) {
-    unset($_SESSION['username'], $_SESSION['fullAccess'], $_SESSION['user_id']);
+    unset($_SESSION['username'], $_SESSION['fullAccess'], $_SESSION['user_id'], $_SESSION['user_email']);
 }
 
 $error = isset($_GET['timeout']) ? "Je sessie is verlopen na 1 uur inactiviteit. Log opnieuw in." : "";

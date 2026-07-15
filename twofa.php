@@ -287,6 +287,7 @@ function twofa_start_pending_login(array $user) {
         $_SESSION['username'],
         $_SESSION['fullAccess'],
         $_SESSION['user_id'],
+        $_SESSION['user_email'],
         $_SESSION['twofa_verified'],
         $_SESSION['pending_2fa_secret'],
         $_SESSION['twofa_email_code_hash'],
@@ -332,6 +333,7 @@ function twofa_finish_login(array $user) {
     $_SESSION['username'] = $user['naam'];
     $_SESSION['fullAccess'] = normalizeFullAccess($user['fullAccess']);
     $_SESSION['user_id'] = (int)$user['id'];
+    $_SESSION['user_email'] = $user['email'] ?? '';
     $_SESSION['twofa_verified'] = true;
     $_SESSION['LAST_ACTIVITY'] = time();
     twofa_clear_pending_login();
