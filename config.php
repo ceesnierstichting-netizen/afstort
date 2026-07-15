@@ -2,8 +2,6 @@
 // config.php
 // Database configuratie (geen session_start hier)
 
-require_once __DIR__ . '/app_helpers.php';
-
 function sendNoIndexHeaders() {
     if (!headers_sent()) {
         header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex', true);
@@ -34,6 +32,72 @@ try {
     $pdo = new PDO($dsn, $user, $pass, $options);
 } catch (\PDOException $e) {
     die('Database connectie mislukt: ' . $e->getMessage());
+}
+
+if (!function_exists('normalizeFullAccess')) {
+    function normalizeFullAccess($value) {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return ((int)$value) !== 0;
+        }
+
+        if (is_string($value)) {
+            if (strlen($value) === 1) {
+                $byteValue = ord($value);
+                if ($byteValue === 0 || $byteValue === 1) {
+                    return $byteValue === 1;
+                }
+            }
+
+            $clean = strtolower(trim($value));
+            if (is_numeric($clean)) {
+                return ((int)$clean) !== 0;
+            }
+
+            return in_array($clean, ['true', 'yes', 'ja', 'on', 'x'], true);
+        }
+
+        return false;
+    }
+}
+
+if (!function_exists('normalizePostcodeInput')) {
+    function normalizePostcodeInput($value) {
+        return strtoupper(str_replace(' ', '', trim((string)$value)));
+    }
+}
+
+if (!function_exists('extractPostcode6')) {
+    function extractPostcode6($str) {
+        if (!$str) {
+            return '';
+        }
+
+        if (preg_match('/\b([0-9]{4})\s*([A-Za-z]{2})\b/', trim($str), $m)) {
+            return strtoupper($m[1] . $m[2]);
+        }
+
+        return '';
+    }
+}
+
+if (!function_exists('shouldReuseStoredCoordinates')) {
+    function shouldReuseStoredCoordinates($newPostcodeValue, $existingPostcodeValue) {
+        $newPc6 = extractPostcode6($newPostcodeValue);
+        $existingPc6 = extractPostcode6($existingPostcodeValue);
+
+        if ($newPc6 !== '' && $existingPc6 !== '') {
+            return $newPc6 === $existingPc6;
+        }
+
+        $newNormalized = normalizePostcodeInput($newPostcodeValue);
+        $existingNormalized = normalizePostcodeInput($existingPostcodeValue);
+
+        return $newNormalized !== '' && $newNormalized === $existingNormalized;
+    }
 }
 
 function refreshCurrentUserAccess(PDO $pdo) {
