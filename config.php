@@ -111,19 +111,9 @@ if (!function_exists('isMobileUserAgent')) {
     }
 }
 
-if (!function_exists('getPreferredAppView')) {
-    function getPreferredAppView() {
-        return $_COOKIE['afstort_view'] ?? '';
-    }
-}
-
 if (!function_exists('shouldUseMobileDriverView')) {
     function shouldUseMobileDriverView($fullAccess) {
         if ($fullAccess) {
-            return false;
-        }
-
-        if (getPreferredAppView() === 'desktop') {
             return false;
         }
 

@@ -18,12 +18,9 @@ if ($fullAccess) {
 }
 
 if (isset($_GET['view']) && $_GET['view'] === 'desktop') {
-    setcookie('afstort_view', 'desktop', time() + (86400 * 30), '/');
     header("Location: index.php");
     exit();
 }
-
-setcookie('afstort_view', 'mobile', time() + (86400 * 30), '/');
 ?>
 <!DOCTYPE html>
 <html lang="nl">

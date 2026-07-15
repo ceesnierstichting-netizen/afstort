@@ -19,7 +19,6 @@ $username   = $_SESSION['username'] ?? '';
 
 if (isset($_GET['view']) && !isset($_GET['action'])) {
     $requestedView = $_GET['view'] === 'desktop' ? 'desktop' : 'mobile';
-    setcookie('afstort_view', $requestedView, time() + (86400 * 30), '/');
 
     if ($requestedView === 'mobile' && !$fullAccess) {
         header("Location: driver_mobile.php");
