@@ -102,12 +102,6 @@ if (isset($_GET['view']) && $_GET['view'] === 'desktop') {
             color: var(--brand-dark);
         }
 
-        .hero p {
-            margin: 10px 0 0;
-            color: var(--muted);
-            line-height: 1.45;
-        }
-
         .hero-actions {
             display: flex;
             flex-wrap: wrap;
@@ -353,18 +347,12 @@ if (isset($_GET['view']) && $_GET['view'] === 'desktop') {
                 </div>
             </div>
             <div class="hero-actions">
-                <a class="primary-link" href="createRapport.php?username=<?php echo urlencode($username); ?>&status=Afgehandeld" target="_blank" rel="noopener noreferrer">Open rapport</a>
-                <a class="secondary-link" href="index.php?view=desktop">Desktopweergave</a>
                 <a class="secondary-link" href="logout.php">Uitloggen</a>
             </div>
             <div class="summary">
                 <div class="summary-card">
                     <span class="summary-label">Ingelogd als</span>
                     <span class="summary-value"><?php echo htmlspecialchars($username); ?></span>
-                </div>
-                <div class="summary-card">
-                    <span class="summary-label">Scherm</span>
-                    <span class="summary-value">Chauffeur mobiel</span>
                 </div>
             </div>
         </section>
@@ -516,7 +504,7 @@ if (isset($_GET['view']) && $_GET['view'] === 'desktop') {
             const list = document.getElementById("ritList");
             list.innerHTML = '<div class="loading-state">Ritten worden geladen…</div>';
 
-            fetch("index.php?action=loadRitten&_=" + Date.now())
+            fetch("index.php?action=loadDriverMobileRitten&_=" + Date.now())
                 .then(async response => {
                     const text = await response.text();
                     let payload = [];
