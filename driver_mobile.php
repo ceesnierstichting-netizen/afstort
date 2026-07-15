@@ -355,7 +355,6 @@ setcookie('afstort_view', 'mobile', time() + (86400 * 30), '/');
                     <h1>Mijn ritten</h1>
                 </div>
             </div>
-            <p>Hier zie je onderweg snel jouw ritten en open opdrachten. De desktopversie blijft beschikbaar voor uitgebreid werken.</p>
             <div class="hero-actions">
                 <a class="primary-link" href="createRapport.php?username=<?php echo urlencode($username); ?>&status=Afgehandeld" target="_blank" rel="noopener noreferrer">Open rapport</a>
                 <a class="secondary-link" href="index.php?view=desktop">Desktopweergave</a>
@@ -375,7 +374,6 @@ setcookie('afstort_view', 'mobile', time() + (86400 * 30), '/');
 
         <div class="section-title">
             <h2>Ritten onderweg</h2>
-            <span class="helper">Trek omlaag of tik op vernieuwen voor de laatste stand.</span>
         </div>
 
         <div class="hero-actions" style="margin-top: 0; margin-bottom: 14px;">
