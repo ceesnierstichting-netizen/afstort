@@ -17,6 +17,25 @@ refreshCurrentUserAccess($pdo);
 $fullAccess = !empty($_SESSION['fullAccess']);
 $username   = $_SESSION['username'] ?? '';
 
+if (isset($_GET['view']) && !isset($_GET['action'])) {
+    $requestedView = $_GET['view'] === 'desktop' ? 'desktop' : 'mobile';
+
+    if ($requestedView === 'mobile' && !$fullAccess) {
+        header("Location: driver_mobile.php");
+        exit();
+    }
+
+    if ($requestedView === 'desktop') {
+        header("Location: index.php");
+        exit();
+    }
+}
+
+if (!isset($_GET['action']) && shouldUseMobileDriverView($fullAccess)) {
+    header("Location: driver_mobile.php");
+    exit();
+}
+
 function resolveCoordinatesFromPostcodeInput($postcodeValue) {
     $postcodeValue = trim((string)$postcodeValue);
     if ($postcodeValue === '' || !function_exists('extractPostcode6') || !function_exists('geocodePostcode')) {

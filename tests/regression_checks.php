@@ -19,5 +19,7 @@ assertSameValue(true, shouldReuseStoredCoordinates('1234 ab', '1234AB'), 'coordi
 assertSameValue(true, shouldReuseStoredCoordinates('1234 AB Amsterdam', '1234AB'), 'coordinaten behouden bij gelijke pc6 met plaatsnaam');
 assertSameValue(false, shouldReuseStoredCoordinates('1234 ab', '1234 AC'), 'coordinaten wissen bij andere postcode');
 assertSameValue(false, shouldReuseStoredCoordinates('1234', '1234 AB'), 'coordinaten wissen bij onvolledige nieuwe postcode');
+assertSameValue(true, isMobileUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)'), 'mobiele user agent iphone');
+assertSameValue(false, isMobileUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'), 'desktop user agent windows');
 
 fwrite(STDOUT, "Regression checks passed.\n");
