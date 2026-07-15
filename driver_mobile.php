@@ -500,11 +500,26 @@ if (isset($_GET['view']) && $_GET['view'] === 'desktop') {
             list.innerHTML = data.map(buildRitCard).join("");
         }
 
+        function filterMobileRitten(data) {
+            if (!Array.isArray(data)) {
+                return [];
+            }
+
+            return data
+                .filter(rit => normalizeChauffeurValue(rit.chauffeur) === username)
+                .filter(rit => (rit.status || "").trim() !== "Afgehandeld")
+                .sort((a, b) => {
+                    const dateA = (a.afhaalmoment || "9999-12-31") + " " + (a.afhaaltijd || "99:99");
+                    const dateB = (b.afhaalmoment || "9999-12-31") + " " + (b.afhaaltijd || "99:99");
+                    return dateA.localeCompare(dateB) || String(a.collectegebied || "").localeCompare(String(b.collectegebied || ""));
+                });
+        }
+
         function loadRitten() {
             const list = document.getElementById("ritList");
             list.innerHTML = '<div class="loading-state">Ritten worden geladen…</div>';
 
-            fetch("index.php?action=loadDriverMobileRitten&_=" + Date.now())
+            fetch("index.php?action=loadRitten&_=" + Date.now())
                 .then(async response => {
                     const text = await response.text();
                     let payload = [];
@@ -521,6 +536,7 @@ if (isset($_GET['view']) && $_GET['view'] === 'desktop') {
 
                     return payload;
                 })
+                .then(filterMobileRitten)
                 .then(renderRitten)
                 .catch(err => {
                     list.innerHTML = `<div class="empty-state">${escapeHtml(err.message || "Laden van ritten is mislukt.")}</div>`;

@@ -69,34 +69,6 @@ if (isset($_GET['action'])) {
         }
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
         exit();
-    } elseif ($action === 'loadDriverMobileRitten') {
-        header('Content-Type: application/json');
-        if ($fullAccess) {
-            http_response_code(403);
-            echo json_encode(['status' => 'error', 'message' => 'Deze mobiele weergave is alleen voor chauffeurs.']);
-            exit();
-        }
-
-        $stmt = $pdo->prepare("
-            SELECT *
-            FROM ritten
-            WHERE chauffeur = :username
-              AND status <> 'Afgehandeld'
-              AND chauffeur <> ''
-              AND chauffeur <> 'Chauffeur kiezen'
-              AND chauffeur <> '-- Kies een chauffeur --'
-            ORDER BY
-              CASE
-                WHEN afhaalmoment IS NULL OR afhaalmoment = '' THEN 1
-                ELSE 0
-              END,
-              afhaalmoment ASC,
-              afhaaltijd ASC,
-              collectegebied ASC
-        ");
-        $stmt->execute([':username' => $username]);
-        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
-        exit();
     } elseif ($action === 'saveRitten') {
         header('Content-Type: application/json');
         try {
