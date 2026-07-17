@@ -2,6 +2,8 @@
 // config.php
 // Database configuratie (geen session_start hier)
 
+require_once __DIR__ . '/app_helpers.php';
+
 function sendNoIndexHeaders() {
     if (!headers_sent()) {
         header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex', true);

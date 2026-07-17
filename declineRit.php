@@ -43,6 +43,8 @@ if (!$ritId || $chauffeurNaam === '') {
     exit;
 }
 
+markeerRitAanbiedingAfgewezen($pdo, $ritId, $chauffeurNaam);
+
 // ---- 1. Rit ophalen ----
 $stmt = $pdo->prepare("\n    SELECT id, collectegebied, postcodePlaats, lat, lon\n    FROM ritten\n    WHERE id = :id\n");
 $stmt->execute(array(':id' => $ritId));
@@ -87,15 +89,17 @@ if (!$chauffeurs) {
 // ---- 3. Dichtstbijzijnde andere chauffeur bepalen (km via Haversine) ----
 $nearest      = null;
 $nearestScore = null;
+$excludedNames = getUitgeslotenChauffeursVoorRit($pdo, $ritId);
 
 foreach ($chauffeurs as $ch) {
     $naam     = $ch['naam'];
     $email    = $ch['email'];
     $postcode = $ch['postcode'];
 
-    // De chauffeur die zich nu afmeldt overslaan
-    if (strcasecmp($naam, $chauffeurNaam) === 0) {
-        continue;
+    foreach ($excludedNames as $excludedName) {
+        if (strcasecmp($naam, $excludedName) === 0) {
+            continue 2;
+        }
     }
 
     if (!$postcode) {
@@ -144,7 +148,11 @@ if ($nearest === null) {
 <body>
     <h1>Helaas, maar dankjewel dat je het doorgeeft!</h1>
     <p>We hebben geregistreerd dat jij deze rit (<?php echo htmlspecialchars($ritId); ?>) niet kunt uitvoeren.</p>
+    <?php if (isRitVrijBeschikbaar($pdo, $ritId)): ?>
+    <p>Alle chauffeurs aan wie deze rit is aangeboden hebben afgewezen. De rit is nu vrij beschikbaar in de lijst.</p>
+    <?php else: ?>
     <p>Op dit moment kon geen andere chauffeur worden aangeschreven.</p>
+    <?php endif; ?>
 </body>
 </html>
 <?php
@@ -189,6 +197,7 @@ $optsMail = array(
 
 $mailResponse = @file_get_contents("https://nierstichtingnederland.nl/afstort/sendBasisemail.php", false, stream_context_create($optsMail));
 // Mailfout negeren voor de gebruiker; in log kun je 'm terugvinden als dat nodig is.
+registreerRitAanbieding($pdo, $ritId, $newName, $newEmail, $nearestScore);
 ?>
 <!DOCTYPE html>
 <html lang="nl">

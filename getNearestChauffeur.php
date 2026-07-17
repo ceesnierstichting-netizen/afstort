@@ -49,6 +49,11 @@ if (!$ritId) {
 
 // Optioneel: chauffeur uitsluiten (bijvoorbeeld degene die de rit afwijst)
 $excludeName = isset($_POST['exclude']) ? trim($_POST['exclude']) : '';
+$excludedNames = getUitgeslotenChauffeursVoorRit($pdo, $ritId);
+if ($excludeName !== '') {
+    $excludedNames[] = $excludeName;
+}
+$excludedNames = array_values(array_unique(array_filter(array_map('trim', $excludedNames))));
 
 // ---- 2. Rit ophalen ----
 $stmt = $pdo->prepare("\n    SELECT id, collectegebied, postcodePlaats, lat, lon\n    FROM ritten\n    WHERE id = :id\n");
@@ -109,6 +114,13 @@ foreach ($chauffeurs as $ch) {
     $naam = $ch['naam'];
     $email = $ch['email'];
     $postcode = $ch['postcode'];
+
+    foreach ($excludedNames as $excludedName) {
+        if (strcasecmp($naam, $excludedName) === 0) {
+            $debug[] = "Chauffeur {$naam} overgeslagen: al eerder aangeboden of expliciet uitgesloten.";
+            continue 2;
+        }
+    }
 
     if ($excludeName !== '' && strcasecmp($naam, $excludeName) === 0) {
         $debug[] = "Chauffeur {$naam} overgeslagen: exclude-parameter.";

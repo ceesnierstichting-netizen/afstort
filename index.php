@@ -61,13 +61,27 @@ if (isset($_GET['action'])) {
     if ($action === 'loadRitten') {
         header('Content-Type: application/json');
         if (!$fullAccess) {
+            ensureRitAanbiedingenTable($pdo);
             $stmt = $pdo->prepare("SELECT * FROM ritten WHERE chauffeur = :username OR chauffeur = '' OR chauffeur IS NULL OR chauffeur = 'Chauffeur kiezen' OR chauffeur = '-- Kies een chauffeur --'");
             $stmt->execute([':username' => $username]);
+            $ritten = [];
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $rit) {
+                $chauffeur = trim((string)($rit['chauffeur'] ?? ''));
+                if ($chauffeur === $username) {
+                    $ritten[] = $rit;
+                    continue;
+                }
+
+                if (isUnassignedChauffeurValue($chauffeur) && isRitVrijBeschikbaar($pdo, (int)$rit['id'])) {
+                    $ritten[] = $rit;
+                }
+            }
         } else {
             $stmt = $pdo->prepare("SELECT * FROM ritten");
             $stmt->execute();
+            $ritten = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
-        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+        echo json_encode($ritten);
         exit();
     } elseif ($action === 'saveRitten') {
         header('Content-Type: application/json');
@@ -79,6 +93,7 @@ if (isset($_GET['action'])) {
             }
 
             $stmtLoadRitGeo = $pdo->prepare("SELECT postcodePlaats, lat, lon FROM ritten WHERE id = :id");
+            $stmtLoadExistingRit = $pdo->prepare("SELECT chauffeur FROM ritten WHERE id = :id");
             $ids = [];
             foreach ($ritten as $i => $rit) {
                 $collectegebied = trim($rit['collectegebied'] ?? '');
@@ -126,6 +141,28 @@ if (isset($_GET['action'])) {
                 list($lat, $lon) = resolveCoordinatesFromPostcodeInput($postcodePlaats);
 
                 if (isset($rit['id']) && !empty($rit['id'])) {
+                    $stmtLoadExistingRit->execute([':id' => $rit['id']]);
+                    $existingRitForRights = $stmtLoadExistingRit->fetch(PDO::FETCH_ASSOC);
+                    $existingChauffeur = trim((string)($existingRitForRights['chauffeur'] ?? ''));
+
+                    if (!$fullAccess) {
+                        $isExistingForUser = strcasecmp($existingChauffeur, $username) === 0;
+                        $isNewForUser = strcasecmp($chauffeur, $username) === 0;
+                        $isExistingUnassigned = isUnassignedChauffeurValue($existingChauffeur);
+
+                        if (!$isExistingForUser && !$isExistingUnassigned) {
+                            throw new RuntimeException('Deze rit is al aan een andere chauffeur toegewezen.');
+                        }
+
+                        if ($isNewForUser && $isExistingUnassigned && !magChauffeurRitVrijKiezen($pdo, (int)$rit['id'], $username)) {
+                            throw new RuntimeException('Deze rit is nog niet vrij beschikbaar om te kiezen.');
+                        }
+
+                        if (!$isNewForUser && !$isExistingForUser && !isUnassignedChauffeurValue($chauffeur)) {
+                            throw new RuntimeException('Je kunt deze rit niet aan een andere chauffeur toewijzen.');
+                        }
+                    }
+
                     $stmtLoadRitGeo->execute([':id' => $rit['id']]);
                     $existingRit = $stmtLoadRitGeo->fetch(PDO::FETCH_ASSOC);
 
@@ -182,6 +219,11 @@ if (isset($_GET['action'])) {
                         ':status'               => $status,
                         ':id'                   => $rit['id']
                     ]);
+
+                    if (!isUnassignedChauffeurValue($chauffeur)) {
+                        resetRitAanbiedingen($pdo, $rit['id']);
+                    }
+
                     $ids[$i] = $rit['id'];
                 } else {
                     $stmt = $pdo->prepare("INSERT INTO ritten (
@@ -213,6 +255,9 @@ if (isset($_GET['action'])) {
                         ':status'               => $status
                     ]);
                     $ids[$i] = $pdo->lastInsertId();
+                    if (!isUnassignedChauffeurValue($chauffeur)) {
+                        resetRitAanbiedingen($pdo, $ids[$i]);
+                    }
                 }
             }
 
@@ -230,6 +275,7 @@ if (isset($_GET['action'])) {
         header('Content-Type: text/plain');
         $data = json_decode(file_get_contents('php://input'), true);
         if (isset($data['id']) && !empty($data['id'])) {
+            resetRitAanbiedingen($pdo, $data['id']);
             $stmt = $pdo->prepare("DELETE FROM ritten WHERE id = :id");
             echo $stmt->execute([':id' => $data['id']]) ? "Rit verwijderd." : "Fout bij verwijderen rit.";
         } else {
@@ -1495,7 +1541,7 @@ if (isset($_GET['action'])) {
       let gekozenNaam = null;
 
       // Niet in testmodus: vraag via getNearestChauffeur.php wie de dichtstbijzijnde chauffeur is
-      fetch("getNearestChauffeur.php", {
+        fetch("getNearestChauffeur.php", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: "ritId=" + encodeURIComponent(ritId)
@@ -1539,6 +1585,28 @@ if (isset($_GET['action'])) {
             body: body,
             van: "noreply@nierstichtingnederland.nl"
           })
+        }).then(async mailResponse => {
+          const mailResult = await mailResponse.json();
+          if (mailResult.status !== "success") {
+            return mailResult;
+          }
+
+          return fetch("registreerRitAanbieding.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ritId: ritId,
+              chauffeurNaam: naam,
+              chauffeurEmail: email,
+              afstandKm: res.afstandKm || null
+            })
+          }).then(async registerResponse => {
+            const registerResult = await registerResponse.json();
+            if (registerResult.status !== "ok") {
+              throw new Error(registerResult.message || "Aanbieding kon niet worden opgeslagen.");
+            }
+            return mailResult;
+          });
         });
       })
       .then(r => r ? r.json() : null)
