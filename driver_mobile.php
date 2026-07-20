@@ -506,7 +506,10 @@ if (isset($_GET['view']) && $_GET['view'] === 'desktop') {
             }
 
             return data
-                .filter(rit => normalizeChauffeurValue(rit.chauffeur) === username)
+                .filter(rit => {
+                    const chauffeur = normalizeChauffeurValue(rit.chauffeur);
+                    return chauffeur === username || chauffeur === "Chauffeur kiezen";
+                })
                 .filter(rit => (rit.status || "").trim() !== "Afgehandeld")
                 .sort((a, b) => {
                     const dateA = (a.afhaalmoment || "9999-12-31") + " " + (a.afhaaltijd || "99:99");
