@@ -1424,6 +1424,22 @@ if (isset($_GET['action'])) {
     }
     
     // Direct versturen van de basisbevestigingsmail
+    function ensureRowSaved(row) {
+      const idField = row.querySelector(".rowId");
+      if (idField && idField.value) {
+        return Promise.resolve(idField.value);
+      }
+
+      return saveRitten().then(() => {
+        const refreshedIdField = row.querySelector(".rowId");
+        const ritId = refreshedIdField ? refreshedIdField.value : "";
+        if (!ritId) {
+          throw new Error("De rit kon niet worden opgeslagen.");
+        }
+        return ritId;
+      });
+    }
+
     function sendBasisemail(btn) {
       let row = btn.closest("tr");
 
@@ -1433,73 +1449,69 @@ if (isset($_GET['action'])) {
         return;
       }
 
-      let idField = row.querySelector(".rowId");
-      let ritId = idField ? idField.value : "";
-      if (!ritId) {
-        alert("De rit moet eerst opgeslagen worden voordat een e-mail verstuurd kan worden.");
-        return;
-      }
-      let contactpersoon  = row.querySelector("input[data-field='contactpersoon']").value; 
-      let emailContact    = row.querySelector("input[data-field='email']").value;
-      let collectegebied  = row.querySelector("input[data-field='collectegebied']").value;
-      let gebiedsnummer   = row.querySelector("input[data-field='gebiedsnummer']").value;
-      let adres           = row.querySelector("input[data-field='adres']").value;
-      let postcodePlaats  = row.querySelector("input[data-field='postcodePlaats']").value;
-      let telefoonnummer  = row.querySelector("input[data-field='telefoonnummer']").value;
-      let verwacht        = row.querySelector("input[data-field='verwachtBedrag']").value;
-      let afhaalmoment    = row.querySelector("input[data-field='afhaalmoment']").value;
-      let afhaaltijd      = row.querySelector("input[data-field='afhaaltijd']").value;
-      let soort           = row.querySelector("select[data-field='soort']").value;
-      let formattedDatum  = formatFullDate(afhaalmoment);
-      let formattedTijd   = formatTime(afhaaltijd);
-      let template = document.getElementById("emailTemplate").value;
-      template = template
-        .replace(/\[naam\]/gi, contactpersoon)
-        .replace(/\[contactpersoon\]/gi, contactpersoon)
-        .replace(/\[collectegebied\]/gi, collectegebied)
-        .replace(/\[gebiedsnummer\]/gi, gebiedsnummer)
-        .replace(/\[adres\]/gi, adres)
-        .replace(/\[postcodePlaats\]/gi, postcodePlaats)
-        .replace(/\[telefoonnummer\]/gi, telefoonnummer)
-        .replace(/\[verwacht\]/gi, verwacht)
-        .replace(/\[verwachtBedrag\]/gi, verwacht)
-        .replace(/\[soort\]/gi, soort)
-        .replace(/\[afhaalmoment\]/gi, formattedDatum)
-        .replace(/\[afhaaltijd\]/gi, formattedTijd)
-        .replace(/\[formattedDatum\]/gi, formattedDatum)
-        .replace(/\[formattedTijd\]/gi, formattedTijd);
-      let busBriefjeUrl = "https://nierstichtingnederland.nl/afstort/busbriefje.php?id=" + ritId;
-      template = template.replace(/\[busbriefje\]/gi,
-              "<a href='" + busBriefjeUrl + "' target='_blank'>Busbriefje</a>"
-            );
-      let afhaalBevestigingUrl = "https://nierstichtingnederland.nl/afstort/maakBriefje.php?id=" + ritId;
-      template = template.replace(/\[afhaalbevestiging\]/gi,
-              "<a href='" + afhaalBevestigingUrl + "' target='_blank'>Afhaalbevestiging</a>"
-            );
-      fetch("sendBasisemail.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: emailContact,
-          subject: "Afhaalopdracht collecte-opbrengst",
-          body: template,
-          van: "noreply@nierstichtingnederland.nl"
+      ensureRowSaved(row)
+        .then(ritId => {
+          let contactpersoon  = row.querySelector("input[data-field='contactpersoon']").value; 
+          let emailContact    = row.querySelector("input[data-field='email']").value;
+          let collectegebied  = row.querySelector("input[data-field='collectegebied']").value;
+          let gebiedsnummer   = row.querySelector("input[data-field='gebiedsnummer']").value;
+          let adres           = row.querySelector("input[data-field='adres']").value;
+          let postcodePlaats  = row.querySelector("input[data-field='postcodePlaats']").value;
+          let telefoonnummer  = row.querySelector("input[data-field='telefoonnummer']").value;
+          let verwacht        = row.querySelector("input[data-field='verwachtBedrag']").value;
+          let afhaalmoment    = row.querySelector("input[data-field='afhaalmoment']").value;
+          let afhaaltijd      = row.querySelector("input[data-field='afhaaltijd']").value;
+          let soort           = row.querySelector("select[data-field='soort']").value;
+          let formattedDatum  = formatFullDate(afhaalmoment);
+          let formattedTijd   = formatTime(afhaaltijd);
+          let template = document.getElementById("emailTemplate").value;
+          template = template
+            .replace(/\[naam\]/gi, contactpersoon)
+            .replace(/\[contactpersoon\]/gi, contactpersoon)
+            .replace(/\[collectegebied\]/gi, collectegebied)
+            .replace(/\[gebiedsnummer\]/gi, gebiedsnummer)
+            .replace(/\[adres\]/gi, adres)
+            .replace(/\[postcodePlaats\]/gi, postcodePlaats)
+            .replace(/\[telefoonnummer\]/gi, telefoonnummer)
+            .replace(/\[verwacht\]/gi, verwacht)
+            .replace(/\[verwachtBedrag\]/gi, verwacht)
+            .replace(/\[soort\]/gi, soort)
+            .replace(/\[afhaalmoment\]/gi, formattedDatum)
+            .replace(/\[afhaaltijd\]/gi, formattedTijd)
+            .replace(/\[formattedDatum\]/gi, formattedDatum)
+            .replace(/\[formattedTijd\]/gi, formattedTijd);
+          let busBriefjeUrl = "https://nierstichtingnederland.nl/afstort/busbriefje.php?id=" + ritId;
+          template = template.replace(/\[busbriefje\]/gi,
+                  "<a href='" + busBriefjeUrl + "' target='_blank'>Busbriefje</a>"
+                );
+          let afhaalBevestigingUrl = "https://nierstichtingnederland.nl/afstort/maakBriefje.php?id=" + ritId;
+          template = template.replace(/\[afhaalbevestiging\]/gi,
+                  "<a href='" + afhaalBevestigingUrl + "' target='_blank'>Afhaalbevestiging</a>"
+                );
+          return fetch("sendBasisemail.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: emailContact,
+              subject: "Afhaalopdracht collecte-opbrengst",
+              body: template,
+              van: "noreply@nierstichtingnederland.nl"
+            })
+          }).then(response => response.json())
+          .then(result => ({ result, ritId }));
         })
-      })
-      .then(response => response.json())
-      .then(result => {
-        if(result.status !== "success") {
-          alert("Fout bij versturen bevestiging naar contact: " + result.message);
-        } else {
-          alert("Bevestigingsmail verstuurd naar contactpersoon.");
-          // Stuur nu ook bericht naar alle chauffeurs
-          sendRitMailToChauffeurs(row, ritId, false);
-        }
-      })
-      .catch(err => {
-        console.error("Fout bij versturen basis e-mail:", err);
-        alert("Fout bij versturen basis e-mail.");
-      });
+        .then(({ result, ritId }) => {
+          if(result.status !== "success") {
+            alert("Fout bij versturen bevestiging naar contact: " + result.message);
+          } else {
+            alert("Bevestigingsmail verstuurd naar contactpersoon.");
+            sendRitMailToChauffeurs(row, ritId, false);
+          }
+        })
+        .catch(err => {
+          console.error("Fout bij versturen basis e-mail:", err);
+          alert("Fout bij versturen basis e-mail: " + (err.message || ""));
+        });
     }
     
     
@@ -1609,7 +1621,6 @@ if (isset($_GET['action'])) {
           });
         });
       })
-      .then(r => r ? r.json() : null)
       .then(res => {
         if (!res) return;
         if (res.status === "success") {
@@ -1749,7 +1760,7 @@ if (isset($_GET['action'])) {
         };
         ritten.push(data);
       });
-      fetch(buildUrl("saveRitten"), {
+      return fetch(buildUrl("saveRitten"), {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify(ritten)
@@ -1775,14 +1786,16 @@ if (isset($_GET['action'])) {
         const rows = document.querySelectorAll("#tableBody tr");
         rows.forEach((row, index) => {
           let idField = row.querySelector(".rowId");
-          if (idField && (!idField.value || idField.value === "")) {
+          if (idField && (!idField.value || idField.value === "") && ids[index]) {
             idField.value = ids[index];
           }
         });
+        return result;
       })
       .catch(err => {
         console.error("Fout bij opslaan:", err);
         alert("Opslaan van de rit is mislukt: " + err.message);
+        throw err;
       });
     }
     
