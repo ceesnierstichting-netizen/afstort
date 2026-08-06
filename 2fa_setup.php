@@ -225,13 +225,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         .muted { color: var(--muted); }
+
+        .alternate {
+            margin-top: 18px;
+            text-align: center;
+            font-size: 0.95rem;
+        }
+
+        .alternate a {
+            color: var(--primary-dark);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .alternate a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
     <main>
         <img src="logohome.png" alt="Logo" class="logo">
         <h1>2FA instellen</h1>
-        <p>Je wachtwoord klopt. Stel nu een authenticator-app in om veilig toegang te krijgen.</p>
+        <p>Je wachtwoord klopt. Wil je graag inloggen met een authenticator-app? Stel die hier dan in. Liever een code per mail ontvangen, dan kun je deze stap overslaan.</p>
 
         <?php if (!empty($error)): ?>
             <div class="error" role="alert"><?php echo htmlspecialchars($error); ?></div>
@@ -274,6 +290,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 autofocus>
             <button type="submit">2FA activeren</button>
         </form>
+
+        <p class="alternate">
+            Geen authenticator-app?
+            <a href="2fa_verify.php?send=mail">Ontvang de controlecode per mail</a>.
+        </p>
     </main>
 </body>
 </html>

@@ -43,8 +43,9 @@ function resolveCoordinatesForSavedRit($postcodePlaats) {
 }
 
 $stmtExistingRit = $pdo->prepare("SELECT postcodePlaats, lat, lon FROM ritten WHERE id = :id");
-$stmtExistingRitChauffeur = $pdo->prepare("SELECT chauffeur FROM ritten WHERE id = :id");
+$stmtExistingRitChauffeur = $pdo->prepare("SELECT chauffeur, contactpersoon FROM ritten WHERE id = :id");
 $ids = [];
+$alerts = [];
 foreach ($data as $i => $rit) {
     // Zorg dat gebiedsnummer aanwezig is, anders een lege string
     $gebiedsnummer = isset($rit['gebiedsnummer']) ? trim($rit['gebiedsnummer']) : '';
@@ -65,6 +66,7 @@ foreach ($data as $i => $rit) {
             $isExistingForUser = strcasecmp($existingChauffeur, $username) === 0;
             $isExistingUnassigned = isUnassignedChauffeurValue($existingChauffeur);
             $isNewForUser = strcasecmp($newChauffeur, $username) === 0;
+            $isOfferedToUser = heeftChauffeurOpenstaandeAanbieding($pdo, (int)$rit['id'], $username);
 
             if (!$isExistingForUser && !$isExistingUnassigned) {
                 http_response_code(403);
@@ -72,7 +74,7 @@ foreach ($data as $i => $rit) {
                 exit;
             }
 
-            if ($isNewForUser && $isExistingUnassigned && !magChauffeurRitVrijKiezen($pdo, (int)$rit['id'], $username)) {
+            if ($isNewForUser && $isExistingUnassigned && !$isOfferedToUser && !magChauffeurRitVrijKiezen($pdo, (int)$rit['id'], $username)) {
                 http_response_code(403);
                 echo json_encode(["status" => "error", "message" => "Deze rit is nog niet vrij beschikbaar om te kiezen."]);
                 exit;
@@ -141,8 +143,14 @@ foreach ($data as $i => $rit) {
         if (!$result) {
             error_log("Update Error: " . print_r($stmt->errorInfo(), true));
         }
-        if (!isUnassignedChauffeurValue($rit['chauffeur'] ?? '')) {
-            resetRitAanbiedingen($pdo, $rit['id']);
+
+        $openstaandeAanbieding = getOpenstaandeRitAanbieding($pdo, (int)$rit['id']);
+        if ($openstaandeAanbieding) {
+            $alerts[] = [
+                'ritId' => (int)$rit['id'],
+                'contactpersoon' => trim((string)($rit['contactpersoon'] ?? ($existingRightsRit['contactpersoon'] ?? ''))),
+                'chauffeurNaam' => trim((string)($openstaandeAanbieding['chauffeur_naam'] ?? '')),
+            ];
         }
         $ids[$i] = $rit['id'];
     } else {
@@ -178,11 +186,12 @@ foreach ($data as $i => $rit) {
             error_log("Insert Error: " . print_r($stmt->errorInfo(), true));
         }
         $ids[$i] = $pdo->lastInsertId();
-        if (!isUnassignedChauffeurValue($rit['chauffeur'] ?? '')) {
-            resetRitAanbiedingen($pdo, $ids[$i]);
-        }
     }
 }
 
-echo json_encode($ids);
+echo json_encode([
+    'status' => 'ok',
+    'ids' => $ids,
+    'alerts' => $alerts,
+]);
 ?>

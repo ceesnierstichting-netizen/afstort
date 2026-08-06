@@ -115,6 +115,73 @@ function ensureRitAanbiedingenTable(PDO $pdo) {
     $ensured = true;
 }
 
+function verwijderDubbeleRitAanbiedingen(PDO $pdo, $ritId) {
+    ensureRitAanbiedingenTable($pdo);
+
+    $ritId = (int)$ritId;
+
+    $stmt = $pdo->prepare("
+        SELECT id
+        FROM rit_aanbiedingen
+        WHERE rit_id = :rit_id AND status = 'aangeboden'
+        ORDER BY aangeboden_op DESC, id DESC
+    ");
+    $stmt->execute([':rit_id' => $ritId]);
+    $aangebodenIds = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+
+    if (count($aangebodenIds) > 1) {
+        $idsToDelete = array_slice($aangebodenIds, 1);
+        $placeholders = implode(',', array_fill(0, count($idsToDelete), '?'));
+        $deleteStmt = $pdo->prepare("DELETE FROM rit_aanbiedingen WHERE id IN ($placeholders)");
+        $deleteStmt->execute($idsToDelete);
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT id
+        FROM rit_aanbiedingen
+        WHERE rit_id = :rit_id AND status = 'afgewezen'
+        ORDER BY afgewezen_op DESC, id DESC
+    ");
+    $stmt->execute([':rit_id' => $ritId]);
+    $afgewezenRows = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    if (!$afgewezenRows) {
+        return;
+    }
+
+    $seen = [];
+    $idsToDelete = [];
+
+    $stmtDetails = $pdo->prepare("
+        SELECT id, chauffeur_naam
+        FROM rit_aanbiedingen
+        WHERE rit_id = :rit_id AND status = 'afgewezen'
+        ORDER BY afgewezen_op DESC, id DESC
+    ");
+    $stmtDetails->execute([':rit_id' => $ritId]);
+
+    foreach ($stmtDetails->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $naamKey = strtolower(trim((string)($row['chauffeur_naam'] ?? '')));
+        if ($naamKey === '') {
+            $idsToDelete[] = (int)$row['id'];
+            continue;
+        }
+
+        if (isset($seen[$naamKey])) {
+            $idsToDelete[] = (int)$row['id'];
+            continue;
+        }
+
+        $seen[$naamKey] = true;
+    }
+
+    if ($idsToDelete) {
+        $placeholders = implode(',', array_fill(0, count($idsToDelete), '?'));
+        $deleteStmt = $pdo->prepare("DELETE FROM rit_aanbiedingen WHERE id IN ($placeholders)");
+        $deleteStmt->execute($idsToDelete);
+    }
+}
+
 function resetRitAanbiedingen(PDO $pdo, $ritId) {
     ensureRitAanbiedingenTable($pdo);
 
@@ -125,40 +192,84 @@ function resetRitAanbiedingen(PDO $pdo, $ritId) {
 function registreerRitAanbieding(PDO $pdo, $ritId, $chauffeurNaam, $chauffeurEmail = null, $afstandKm = null) {
     ensureRitAanbiedingenTable($pdo);
 
+    $ritId = (int)$ritId;
+    $chauffeurNaam = trim((string)$chauffeurNaam);
+
+    $deleteAangebodenStmt = $pdo->prepare("
+        DELETE FROM rit_aanbiedingen
+        WHERE rit_id = :rit_id AND status = 'aangeboden'
+    ");
+    $deleteAangebodenStmt->execute([':rit_id' => $ritId]);
+
     $stmt = $pdo->prepare("
         INSERT INTO rit_aanbiedingen (rit_id, chauffeur_naam, chauffeur_email, afstand_km, status, aangeboden_op, afgewezen_op)
         VALUES (:rit_id, :chauffeur_naam, :chauffeur_email, :afstand_km, 'aangeboden', NOW(), NULL)
-        ON DUPLICATE KEY UPDATE
-            chauffeur_email = VALUES(chauffeur_email),
-            afstand_km = VALUES(afstand_km),
-            status = 'aangeboden',
-            aangeboden_op = NOW(),
-            afgewezen_op = NULL
     ");
 
     $stmt->execute([
-        ':rit_id' => (int)$ritId,
-        ':chauffeur_naam' => trim((string)$chauffeurNaam),
+        ':rit_id' => $ritId,
+        ':chauffeur_naam' => $chauffeurNaam,
         ':chauffeur_email' => $chauffeurEmail !== null ? trim((string)$chauffeurEmail) : null,
         ':afstand_km' => $afstandKm !== null ? (float)$afstandKm : null,
     ]);
+
+    verwijderDubbeleRitAanbiedingen($pdo, $ritId);
 }
 
 function markeerRitAanbiedingAfgewezen(PDO $pdo, $ritId, $chauffeurNaam) {
     ensureRitAanbiedingenTable($pdo);
 
+    $ritId = (int)$ritId;
+    $chauffeurNaam = trim((string)$chauffeurNaam);
+
+    $deleteAangebodenStmt = $pdo->prepare("
+        DELETE FROM rit_aanbiedingen
+        WHERE rit_id = :rit_id
+          AND status = 'aangeboden'
+          AND LOWER(TRIM(chauffeur_naam)) = LOWER(TRIM(:chauffeur_naam))
+    ");
+    $deleteAangebodenStmt->execute([
+        ':rit_id' => $ritId,
+        ':chauffeur_naam' => $chauffeurNaam,
+    ]);
+
+    $existingRejectedStmt = $pdo->prepare("
+        SELECT id
+        FROM rit_aanbiedingen
+        WHERE rit_id = :rit_id
+          AND status = 'afgewezen'
+          AND LOWER(TRIM(chauffeur_naam)) = LOWER(TRIM(:chauffeur_naam))
+        ORDER BY afgewezen_op DESC, id DESC
+        LIMIT 1
+    ");
+    $existingRejectedStmt->execute([
+        ':rit_id' => $ritId,
+        ':chauffeur_naam' => $chauffeurNaam,
+    ]);
+    $existingRejectedId = (int)$existingRejectedStmt->fetchColumn();
+
+    if ($existingRejectedId > 0) {
+        $updateStmt = $pdo->prepare("
+            UPDATE rit_aanbiedingen
+            SET afgewezen_op = NOW()
+            WHERE id = :id
+        ");
+        $updateStmt->execute([':id' => $existingRejectedId]);
+        verwijderDubbeleRitAanbiedingen($pdo, $ritId);
+        return;
+    }
+
     $stmt = $pdo->prepare("
         INSERT INTO rit_aanbiedingen (rit_id, chauffeur_naam, status, aangeboden_op, afgewezen_op)
         VALUES (:rit_id, :chauffeur_naam, 'afgewezen', NOW(), NOW())
-        ON DUPLICATE KEY UPDATE
-            status = 'afgewezen',
-            afgewezen_op = NOW()
     ");
 
     $stmt->execute([
-        ':rit_id' => (int)$ritId,
-        ':chauffeur_naam' => trim((string)$chauffeurNaam),
+        ':rit_id' => $ritId,
+        ':chauffeur_naam' => $chauffeurNaam,
     ]);
+
+    verwijderDubbeleRitAanbiedingen($pdo, $ritId);
 }
 
 function getUitgeslotenChauffeursVoorRit(PDO $pdo, $ritId) {
@@ -173,10 +284,44 @@ function getUitgeslotenChauffeursVoorRit(PDO $pdo, $ritId) {
 function heeftRitOpenstaandeAanbieding(PDO $pdo, $ritId) {
     ensureRitAanbiedingenTable($pdo);
 
+    verwijderDubbeleRitAanbiedingen($pdo, $ritId);
+
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM rit_aanbiedingen WHERE rit_id = :rit_id AND status = 'aangeboden'");
     $stmt->execute([':rit_id' => (int)$ritId]);
 
     return ((int)$stmt->fetchColumn()) > 0;
+}
+
+function getOpenstaandeRitAanbieding(PDO $pdo, $ritId) {
+    ensureRitAanbiedingenTable($pdo);
+
+    verwijderDubbeleRitAanbiedingen($pdo, $ritId);
+
+    $stmt = $pdo->prepare("
+        SELECT rit_id, chauffeur_naam, chauffeur_email, afstand_km, status, aangeboden_op
+        FROM rit_aanbiedingen
+        WHERE rit_id = :rit_id AND status = 'aangeboden'
+        ORDER BY aangeboden_op DESC, id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([':rit_id' => (int)$ritId]);
+
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
+function heeftChauffeurOpenstaandeAanbieding(PDO $pdo, $ritId, $chauffeurNaam) {
+    $chauffeurNaam = trim((string)$chauffeurNaam);
+    if ($chauffeurNaam === '') {
+        return false;
+    }
+
+    $aanbieding = getOpenstaandeRitAanbieding($pdo, $ritId);
+    if (!$aanbieding) {
+        return false;
+    }
+
+    return strcasecmp(trim((string)$aanbieding['chauffeur_naam']), $chauffeurNaam) === 0;
 }
 
 function isRitVrijBeschikbaar(PDO $pdo, $ritId) {

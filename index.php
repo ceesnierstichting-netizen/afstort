@@ -62,17 +62,44 @@ if (isset($_GET['action'])) {
         header('Content-Type: application/json');
         if (!$fullAccess) {
             ensureRitAanbiedingenTable($pdo);
-            $stmt = $pdo->prepare("SELECT * FROM ritten WHERE chauffeur = :username OR chauffeur = '' OR chauffeur IS NULL OR chauffeur = 'Chauffeur kiezen' OR chauffeur = '-- Kies een chauffeur --'");
-            $stmt->execute([':username' => $username]);
+            $stmt = $pdo->prepare("
+                SELECT *
+                FROM ritten
+                WHERE chauffeur = :username
+                   OR chauffeur = ''
+                   OR chauffeur IS NULL
+                   OR chauffeur = 'Chauffeur kiezen'
+                   OR chauffeur = '-- Kies een chauffeur --'
+                   OR EXISTS (
+                        SELECT 1
+                        FROM rit_aanbiedingen
+                        WHERE rit_aanbiedingen.rit_id = ritten.id
+                          AND rit_aanbiedingen.status = 'aangeboden'
+                          AND LOWER(TRIM(rit_aanbiedingen.chauffeur_naam)) = LOWER(TRIM(:username_check))
+                   )
+            ");
+            $stmt->execute([
+                ':username' => $username,
+                ':username_check' => $username,
+            ]);
             $ritten = [];
             foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $rit) {
                 $chauffeur = trim((string)($rit['chauffeur'] ?? ''));
+                $isAangebodenAanGebruiker = heeftChauffeurOpenstaandeAanbieding($pdo, (int)$rit['id'], $username);
                 if ($chauffeur === $username) {
+                    $rit['is_aangeboden_aan_ingelogde_chauffeur'] = $isAangebodenAanGebruiker;
+                    $ritten[] = $rit;
+                    continue;
+                }
+
+                if ($isAangebodenAanGebruiker) {
+                    $rit['is_aangeboden_aan_ingelogde_chauffeur'] = true;
                     $ritten[] = $rit;
                     continue;
                 }
 
                 if (isUnassignedChauffeurValue($chauffeur) && isRitVrijBeschikbaar($pdo, (int)$rit['id'])) {
+                    $rit['is_aangeboden_aan_ingelogde_chauffeur'] = false;
                     $ritten[] = $rit;
                 }
             }
@@ -93,8 +120,9 @@ if (isset($_GET['action'])) {
             }
 
             $stmtLoadRitGeo = $pdo->prepare("SELECT postcodePlaats, lat, lon FROM ritten WHERE id = :id");
-            $stmtLoadExistingRit = $pdo->prepare("SELECT chauffeur FROM ritten WHERE id = :id");
+            $stmtLoadExistingRit = $pdo->prepare("SELECT chauffeur, contactpersoon FROM ritten WHERE id = :id");
             $ids = [];
+            $alerts = [];
             foreach ($ritten as $i => $rit) {
                 $collectegebied = trim($rit['collectegebied'] ?? '');
                 $wijknaam = trim($rit['wijknaam'] ?? '');
@@ -149,12 +177,13 @@ if (isset($_GET['action'])) {
                         $isExistingForUser = strcasecmp($existingChauffeur, $username) === 0;
                         $isNewForUser = strcasecmp($chauffeur, $username) === 0;
                         $isExistingUnassigned = isUnassignedChauffeurValue($existingChauffeur);
+                        $isOfferedToUser = heeftChauffeurOpenstaandeAanbieding($pdo, (int)$rit['id'], $username);
 
                         if (!$isExistingForUser && !$isExistingUnassigned) {
                             throw new RuntimeException('Deze rit is al aan een andere chauffeur toegewezen.');
                         }
 
-                        if ($isNewForUser && $isExistingUnassigned && !magChauffeurRitVrijKiezen($pdo, (int)$rit['id'], $username)) {
+                        if ($isNewForUser && $isExistingUnassigned && !$isOfferedToUser && !magChauffeurRitVrijKiezen($pdo, (int)$rit['id'], $username)) {
                             throw new RuntimeException('Deze rit is nog niet vrij beschikbaar om te kiezen.');
                         }
 
@@ -220,8 +249,13 @@ if (isset($_GET['action'])) {
                         ':id'                   => $rit['id']
                     ]);
 
-                    if (!isUnassignedChauffeurValue($chauffeur)) {
-                        resetRitAanbiedingen($pdo, $rit['id']);
+                    $openstaandeAanbieding = getOpenstaandeRitAanbieding($pdo, (int)$rit['id']);
+                    if ($openstaandeAanbieding) {
+                        $alerts[] = [
+                            'ritId' => (int)$rit['id'],
+                            'contactpersoon' => trim((string)($contactpersoon !== '' ? $contactpersoon : ($existingRitForRights['contactpersoon'] ?? ''))),
+                            'chauffeurNaam' => trim((string)($openstaandeAanbieding['chauffeur_naam'] ?? '')),
+                        ];
                     }
 
                     $ids[$i] = $rit['id'];
@@ -255,13 +289,10 @@ if (isset($_GET['action'])) {
                         ':status'               => $status
                     ]);
                     $ids[$i] = $pdo->lastInsertId();
-                    if (!isUnassignedChauffeurValue($chauffeur)) {
-                        resetRitAanbiedingen($pdo, $ids[$i]);
-                    }
                 }
             }
 
-            echo json_encode(['status' => 'ok', 'ids' => $ids]);
+            echo json_encode(['status' => 'ok', 'ids' => $ids, 'alerts' => $alerts]);
         } catch (Throwable $e) {
             http_response_code(500);
             echo json_encode([
@@ -1081,6 +1112,7 @@ if (isset($_GET['action'])) {
     let autoLogoutTimer;
     let currentConfirmRow = null;
     let saveTimer;
+    const shownUpdateAlerts = new Set();
     
     // Globale variabelen voor e-mailtemplates
     let emailTemplateChauffeur = "";
@@ -1096,6 +1128,37 @@ if (isset($_GET['action'])) {
         return "Chauffeur kiezen";
       }
       return v;
+    }
+
+    function buildExistingOfferAlertMessage(contactpersoon, chauffeurNaam) {
+      return "Deze wijziging heeft geen invloed op de bestaande mail-aanschrijving van de dichtstbijzijnde chauffeur voor aanvrager "
+        + (contactpersoon || "")
+        + ".\nDie chauffeur blijft: "
+        + (chauffeurNaam || "")
+        + ".";
+    }
+
+    function showExistingOfferAlerts(alerts) {
+      if (!Array.isArray(alerts) || alerts.length === 0) {
+        return;
+      }
+
+      alerts.forEach(item => {
+        const ritId = item && item.ritId ? String(item.ritId) : "";
+        const contactpersoon = item && item.contactpersoon ? String(item.contactpersoon).trim() : "";
+        const chauffeurNaam = item && item.chauffeurNaam ? String(item.chauffeurNaam).trim() : "";
+        if (!ritId || !chauffeurNaam) {
+          return;
+        }
+
+        const fingerprint = [ritId, contactpersoon, chauffeurNaam].join("|").toLowerCase();
+        if (shownUpdateAlerts.has(fingerprint)) {
+          return;
+        }
+
+        shownUpdateAlerts.add(fingerprint);
+        alert(buildExistingOfferAlertMessage(contactpersoon, chauffeurNaam));
+      });
     }
 
     // Controle voor "Zend bevestiging aan contactpersoon"
@@ -1442,6 +1505,7 @@ if (isset($_GET['action'])) {
 
     function sendBasisemail(btn) {
       let row = btn.closest("tr");
+      const hadExistingRit = Boolean(row.querySelector(".rowId")?.value);
 
       // >>> VALIDATIE voor contactbevestiging <<<
       if (!validateContactConfirmationRow(row)) {
@@ -1505,7 +1569,9 @@ if (isset($_GET['action'])) {
             alert("Fout bij versturen bevestiging naar contact: " + result.message);
           } else {
             alert("Bevestigingsmail verstuurd naar contactpersoon.");
-            sendRitMailToChauffeurs(row, ritId, false);
+            if (!hadExistingRit) {
+              sendRitMailToChauffeurs(row, ritId, false);
+            }
           }
         })
         .catch(err => {
@@ -1790,6 +1856,7 @@ if (isset($_GET['action'])) {
             idField.value = ids[index];
           }
         });
+        showExistingOfferAlerts(result.alerts || []);
         return result;
       })
       .catch(err => {
