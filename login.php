@@ -219,7 +219,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <input type="email" id="email" name="email" required autocomplete="email" value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>" autofocus>
                 <label for="password">Wachtwoord</label>
                 <input type="password" id="password" name="password" required autocomplete="current-password">
-                <div class="info">Na je wachtwoord volgt een controlecode uit je authenticator-app.</div>
+                <div class="info">Na je wachtwoord volgt een controlecode. Je kunt die ontvangen via je authenticator-app of per mail.</div>
                 <input type="submit" value="Inloggen">
             </form>
             <div class="forgot-password">

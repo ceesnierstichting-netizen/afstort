@@ -508,7 +508,9 @@ if (isset($_GET['view']) && $_GET['view'] === 'desktop') {
             return data
                 .filter(rit => {
                     const chauffeur = normalizeChauffeurValue(rit.chauffeur);
-                    return chauffeur === username || chauffeur === "Chauffeur kiezen";
+                    return chauffeur === username
+                        || chauffeur === "Chauffeur kiezen"
+                        || Boolean(rit.is_aangeboden_aan_ingelogde_chauffeur);
                 })
                 .filter(rit => (rit.status || "").trim() !== "Afgehandeld")
                 .sort((a, b) => {

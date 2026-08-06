@@ -9,14 +9,35 @@ if (!$user) {
     exit();
 }
 
-if (empty($user['twofa_enabled']) || empty($user['twofa_secret'])) {
+if (empty($user['email']) || !filter_var($user['email'], FILTER_VALIDATE_EMAIL)) {
+    if (empty($user['twofa_enabled']) || empty($user['twofa_secret'])) {
+        header("Location: 2fa_setup.php");
+        exit();
+    }
+}
+
+$hasAuthenticator = !empty($user['twofa_enabled']) && !empty($user['twofa_secret']);
+
+if (!$hasAuthenticator && isset($_POST['method']) && $_POST['method'] === 'authenticator') {
     header("Location: 2fa_setup.php");
     exit();
 }
 
 $error = "";
 $notice = "";
-$mode = "authenticator";
+$mode = $hasAuthenticator ? "authenticator" : "mail";
+
+if (!$hasAuthenticator && empty($_SESSION['twofa_email_code_hash']) && twofa_can_send_email_code($waitSeconds)) {
+    $emailCode = twofa_generate_email_code();
+    twofa_store_email_code($emailCode);
+
+    if (twofa_send_email_code($user['email'], $emailCode, $user['naam'] ?? '')) {
+        $notice = "We hebben een code gestuurd naar " . twofa_mask_email($user['email']) . ".";
+    } else {
+        twofa_clear_email_code();
+        $error = "De code kon niet per mail worden verzonden. Probeer het later opnieuw.";
+    }
+}
 
 if (isset($_GET['send']) && $_GET['send'] === 'mail') {
     $mode = "mail";
@@ -24,7 +45,7 @@ if (isset($_GET['send']) && $_GET['send'] === 'mail') {
 
     if (empty($user['email']) || !filter_var($user['email'], FILTER_VALIDATE_EMAIL)) {
         $error = "Er is geen geldig e-mailadres bekend voor dit account.";
-        $mode = "authenticator";
+        $mode = $hasAuthenticator ? "authenticator" : "mail";
     } elseif (!twofa_can_send_email_code($waitSeconds)) {
         $notice = "Er is net al een code verstuurd. Wacht nog " . $waitSeconds . " seconden voor een nieuwe code.";
     } else {
@@ -36,13 +57,14 @@ if (isset($_GET['send']) && $_GET['send'] === 'mail') {
         } else {
             twofa_clear_email_code();
             $error = "De code kon niet per mail worden verzonden. Probeer het later opnieuw of gebruik je authenticator-app.";
-            $mode = "authenticator";
+            $mode = $hasAuthenticator ? "authenticator" : "mail";
         }
     }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $mode = ($_POST['method'] ?? 'authenticator') === 'mail' ? 'mail' : 'authenticator';
+    $requestedMode = ($_POST['method'] ?? $mode) === 'mail' ? 'mail' : 'authenticator';
+    $mode = (!$hasAuthenticator || $requestedMode === 'mail') ? 'mail' : 'authenticator';
     $code = trim($_POST['twofa_code'] ?? $_POST['code'] ?? '');
     $matchedStep = null;
     $lastUsedStep = isset($user['twofa_last_used_step']) ? (int)$user['twofa_last_used_step'] : 0;
@@ -58,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    if (twofa_verify_code($user['twofa_secret'], $code, 1, $matchedStep)) {
+    if ($hasAuthenticator && twofa_verify_code($user['twofa_secret'], $code, 1, $matchedStep)) {
         if ($matchedStep <= $lastUsedStep) {
             $error = "Deze controlecode is al gebruikt. Wacht op een nieuwe code en probeer opnieuw.";
         } else {
@@ -89,7 +111,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $error = ($mode === 'mail' && $emailMessage !== "")
             ? $emailMessage
-            : "De controlecode klopt niet. Je kunt ook een herstelcode gebruiken.";
+            : ($hasAuthenticator
+                ? "De controlecode klopt niet. Je kunt ook een herstelcode gebruiken."
+                : "De controlecode klopt niet.");
     }
 }
 ?>
@@ -277,14 +301,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button type="submit">Inloggen</button>
         </form>
 
-        <p class="fallback">
-            Heb je geen toegang tot je telefoon of de authenticator app, je kunt ook de code
-            <a href="2fa_verify.php?send=mail">Per mail</a>
-            ontvangen.
-        </p>
-
-        <?php if ($mode === 'mail'): ?>
-            <p class="fallback"><a href="2fa_verify.php">Toch de authenticator-app gebruiken</a></p>
+        <?php if ($hasAuthenticator): ?>
+            <p class="fallback">
+                Kies hoe je wilt inloggen:
+                <?php if ($mode === 'mail'): ?>
+                    <a href="2fa_verify.php">gebruik je authenticator-app</a>
+                    of
+                    <a href="2fa_verify.php?send=mail">ontvang opnieuw een code per mail</a>.
+                <?php else: ?>
+                    <a href="2fa_verify.php?send=mail">ontvang de code per mail</a>
+                    of gebruik je authenticator-app.
+                <?php endif; ?>
+            </p>
+        <?php else: ?>
+            <p class="fallback">
+                Geen authenticator-app? Je kunt hier gewoon inloggen met een code per mail.
+            </p>
+            <p class="fallback">
+                Wil je later toch liever een authenticator-app gebruiken?
+                <a href="2fa_setup.php">Stel die dan hier in</a>.
+            </p>
         <?php endif; ?>
 
         <div class="logout">
