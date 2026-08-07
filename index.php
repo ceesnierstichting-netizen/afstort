@@ -323,10 +323,10 @@ if (isset($_GET['action'])) {
     } elseif ($action === 'loadChauffeurs') {
         header('Content-Type: application/json');
         if (!$fullAccess) {
-            $stmt = $pdo->prepare("SELECT naam, email FROM chauffeurs WHERE naam = :username");
+            $stmt = $pdo->prepare("SELECT naam, email, postcode FROM chauffeurs WHERE naam = :username");
             $stmt->execute([':username' => $username]);
         } else {
-            $stmt = $pdo->prepare("SELECT naam, email FROM chauffeurs WHERE naam <> 'Admin' ORDER BY naam ASC");
+            $stmt = $pdo->prepare("SELECT naam, email, postcode FROM chauffeurs WHERE naam <> 'Admin' ORDER BY naam ASC");
             $stmt->execute();
         }
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
@@ -1440,10 +1440,14 @@ if (isset($_GET['action'])) {
           chauffeurList.innerHTML = "";
           data.forEach(chauffeur => {
             const li = document.createElement("li");
+            const postcode = (chauffeur.postcode || "").trim();
+            const naamMetPostcode = postcode
+              ? '<strong>' + chauffeur.naam + ' (' + postcode + ')</strong>'
+              : '<strong>' + chauffeur.naam + '</strong>';
             if (chauffeur.naam === 'Admin') {
-              li.innerHTML = '<strong>' + chauffeur.naam + '</strong>';
+              li.innerHTML = naamMetPostcode;
             } else {
-              li.innerHTML = '<strong>' + chauffeur.naam + '</strong><span style="color:red;cursor:pointer;" onclick="deleteChauffeur(\'' + chauffeur.naam + '\')"> Verwijder</span>';
+              li.innerHTML = naamMetPostcode + '<span style="color:red;cursor:pointer;" onclick="deleteChauffeur(\'' + chauffeur.naam + '\')"> Verwijder</span>';
             }
             chauffeurList.appendChild(li);
           });
