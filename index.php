@@ -1441,13 +1441,15 @@ if (isset($_GET['action'])) {
           data.forEach(chauffeur => {
             const li = document.createElement("li");
             const postcode = (chauffeur.postcode || "").trim();
-            const naamMetPostcode = postcode
-              ? '<strong>' + chauffeur.naam + ' (' + postcode + ')</strong>'
+            const email = (chauffeur.email || "").trim();
+            const details = [postcode, email].filter(Boolean).join(' | ');
+            const naamMetDetails = details
+              ? '<strong>' + chauffeur.naam + ' (' + details + ')</strong>'
               : '<strong>' + chauffeur.naam + '</strong>';
             if (chauffeur.naam === 'Admin') {
-              li.innerHTML = naamMetPostcode;
+              li.innerHTML = naamMetDetails;
             } else {
-              li.innerHTML = naamMetPostcode + '<span style="color:red;cursor:pointer;" onclick="deleteChauffeur(\'' + chauffeur.naam + '\')"> Verwijder</span>';
+              li.innerHTML = naamMetDetails + '<span style="color:red;cursor:pointer;" onclick="deleteChauffeur(\'' + chauffeur.naam + '\')"> Verwijder</span>';
             }
             chauffeurList.appendChild(li);
           });
