@@ -145,7 +145,7 @@ foreach ($data as $i => $rit) {
         }
 
         $openstaandeAanbieding = getOpenstaandeRitAanbieding($pdo, (int)$rit['id']);
-        if ($openstaandeAanbieding) {
+        if (!empty($_SESSION['fullAccess']) && $openstaandeAanbieding) {
             $alerts[] = [
                 'ritId' => (int)$rit['id'],
                 'contactpersoon' => trim((string)($rit['contactpersoon'] ?? ($existingRightsRit['contactpersoon'] ?? ''))),

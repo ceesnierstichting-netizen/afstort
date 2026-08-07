@@ -250,7 +250,7 @@ if (isset($_GET['action'])) {
                     ]);
 
                     $openstaandeAanbieding = getOpenstaandeRitAanbieding($pdo, (int)$rit['id']);
-                    if ($openstaandeAanbieding) {
+                    if ($fullAccess && $openstaandeAanbieding) {
                         $alerts[] = [
                             'ritId' => (int)$rit['id'],
                             'contactpersoon' => trim((string)($contactpersoon !== '' ? $contactpersoon : ($existingRitForRights['contactpersoon'] ?? ''))),
@@ -947,6 +947,37 @@ if (isset($_GET['action'])) {
     #confirmRitBtn { background-color: var(--success); }
     #cancelRitBtn { background-color: var(--danger); }
 
+    #existingOfferNotice {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 3200;
+      justify-content: flex-end;
+      align-items: flex-end;
+      pointer-events: none;
+    }
+
+    .existing-offer-notice-card {
+      width: min(460px, calc(100vw - 36px));
+      background: #fff7d6;
+      border: 1px solid #e7c766;
+      border-radius: 12px;
+      box-shadow: 0 10px 24px rgba(17, 24, 39, 0.18);
+      padding: 16px;
+      pointer-events: auto;
+    }
+
+    #existingOfferNoticeText {
+      color: #4b3d0b;
+      line-height: 1.45;
+      white-space: pre-line;
+      margin-bottom: 12px;
+    }
+
+    #existingOfferNoticeClose {
+      background: #8a6a00;
+    }
+
     #notification {
       position: fixed;
       top: 18px;
@@ -1104,6 +1135,13 @@ if (isset($_GET['action'])) {
       <button id="cancelRitBtn">Annuleer</button>
     </div>
   </div>
+
+  <div id="existingOfferNotice" style="display:none;">
+    <div class="existing-offer-notice-card">
+      <div id="existingOfferNoticeText"></div>
+      <button type="button" id="existingOfferNoticeClose">Sluiten</button>
+    </div>
+  </div>
   
   <script>
     const fullAccess = <?php echo json_encode($fullAccess); ?>;
@@ -1113,6 +1151,8 @@ if (isset($_GET['action'])) {
     let currentConfirmRow = null;
     let saveTimer;
     const shownUpdateAlerts = new Set();
+    const pendingExistingOfferNotices = [];
+    let existingOfferNoticeVisible = false;
     
     // Globale variabelen voor e-mailtemplates
     let emailTemplateChauffeur = "";
@@ -1138,8 +1178,33 @@ if (isset($_GET['action'])) {
         + ".";
     }
 
+    function closeExistingOfferNotice() {
+      const notice = document.getElementById("existingOfferNotice");
+      if (notice) {
+        notice.style.display = "none";
+      }
+      existingOfferNoticeVisible = false;
+      window.setTimeout(showNextExistingOfferNotice, 0);
+    }
+
+    function showNextExistingOfferNotice() {
+      if (!fullAccess || existingOfferNoticeVisible || pendingExistingOfferNotices.length === 0) {
+        return;
+      }
+
+      const notice = document.getElementById("existingOfferNotice");
+      const noticeText = document.getElementById("existingOfferNoticeText");
+      if (!notice || !noticeText) {
+        return;
+      }
+
+      existingOfferNoticeVisible = true;
+      noticeText.textContent = pendingExistingOfferNotices.shift();
+      notice.style.display = "flex";
+    }
+
     function showExistingOfferAlerts(alerts) {
-      if (!Array.isArray(alerts) || alerts.length === 0) {
+      if (!fullAccess || !Array.isArray(alerts) || alerts.length === 0) {
         return;
       }
 
@@ -1157,8 +1222,10 @@ if (isset($_GET['action'])) {
         }
 
         shownUpdateAlerts.add(fingerprint);
-        alert(buildExistingOfferAlertMessage(contactpersoon, chauffeurNaam));
+        pendingExistingOfferNotices.push(buildExistingOfferAlertMessage(contactpersoon, chauffeurNaam));
       });
+
+      showNextExistingOfferNotice();
     }
 
     // Controle voor "Zend bevestiging aan contactpersoon"
@@ -1246,6 +1313,7 @@ if (isset($_GET['action'])) {
         document.getElementById("confirmRitModal").style.display = "none";
       });
       document.getElementById("confirmRitBtn")?.addEventListener("click", confirmRit);
+      document.getElementById("existingOfferNoticeClose")?.addEventListener("click", closeExistingOfferNotice);
     });
     
     function buildUrl(action) {
