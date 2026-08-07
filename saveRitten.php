@@ -47,6 +47,8 @@ $stmtExistingRitChauffeur = $pdo->prepare("SELECT chauffeur, contactpersoon FROM
 $ids = [];
 $alerts = [];
 foreach ($data as $i => $rit) {
+    $isDirty = !empty($rit['__dirty']);
+
     // Zorg dat gebiedsnummer aanwezig is, anders een lege string
     $gebiedsnummer = isset($rit['gebiedsnummer']) ? trim($rit['gebiedsnummer']) : '';
     $postcodePlaats = trim($rit['postcodePlaats'] ?? '');
@@ -56,6 +58,11 @@ foreach ($data as $i => $rit) {
     
     // Als er een ID is, gaat het om een update; anders een insert.
     if (isset($rit['id']) && !empty($rit['id'])) {
+        if (!$isDirty) {
+            $ids[$i] = $rit['id'];
+            continue;
+        }
+
         if (empty($_SESSION['fullAccess'])) {
             $stmtExistingRitChauffeur->execute([':id' => $rit['id']]);
             $existingRightsRit = $stmtExistingRitChauffeur->fetch(PDO::FETCH_ASSOC);
@@ -145,7 +152,7 @@ foreach ($data as $i => $rit) {
         }
 
         $openstaandeAanbieding = getOpenstaandeRitAanbieding($pdo, (int)$rit['id']);
-        if (!empty($_SESSION['fullAccess']) && $openstaandeAanbieding) {
+        if (!empty($_SESSION['fullAccess']) && $isDirty && $openstaandeAanbieding) {
             $alerts[] = [
                 'ritId' => (int)$rit['id'],
                 'contactpersoon' => trim((string)($rit['contactpersoon'] ?? ($existingRightsRit['contactpersoon'] ?? ''))),

@@ -124,6 +124,7 @@ if (isset($_GET['action'])) {
             $ids = [];
             $alerts = [];
             foreach ($ritten as $i => $rit) {
+                $isDirty = !empty($rit['__dirty']);
                 $collectegebied = trim($rit['collectegebied'] ?? '');
                 $wijknaam = trim($rit['wijknaam'] ?? '');
                 $gebiedsnummer = trim($rit['gebiedsnummer'] ?? '');
@@ -169,6 +170,11 @@ if (isset($_GET['action'])) {
                 list($lat, $lon) = resolveCoordinatesFromPostcodeInput($postcodePlaats);
 
                 if (isset($rit['id']) && !empty($rit['id'])) {
+                    if (!$isDirty) {
+                        $ids[$i] = $rit['id'];
+                        continue;
+                    }
+
                     $stmtLoadExistingRit->execute([':id' => $rit['id']]);
                     $existingRitForRights = $stmtLoadExistingRit->fetch(PDO::FETCH_ASSOC);
                     $existingChauffeur = trim((string)($existingRitForRights['chauffeur'] ?? ''));
@@ -250,7 +256,7 @@ if (isset($_GET['action'])) {
                     ]);
 
                     $openstaandeAanbieding = getOpenstaandeRitAanbieding($pdo, (int)$rit['id']);
-                    if ($fullAccess && $openstaandeAanbieding) {
+                    if ($fullAccess && $isDirty && $openstaandeAanbieding) {
                         $alerts[] = [
                             'ritId' => (int)$rit['id'],
                             'contactpersoon' => trim((string)($contactpersoon !== '' ? $contactpersoon : ($existingRitForRights['contactpersoon'] ?? ''))),
@@ -317,10 +323,10 @@ if (isset($_GET['action'])) {
     } elseif ($action === 'loadChauffeurs') {
         header('Content-Type: application/json');
         if (!$fullAccess) {
-            $stmt = $pdo->prepare("SELECT naam, email FROM chauffeurs WHERE naam = :username");
+            $stmt = $pdo->prepare("SELECT naam, email, postcode FROM chauffeurs WHERE naam = :username");
             $stmt->execute([':username' => $username]);
         } else {
-            $stmt = $pdo->prepare("SELECT naam, email FROM chauffeurs WHERE naam <> 'Admin' ORDER BY naam ASC");
+            $stmt = $pdo->prepare("SELECT naam, email, postcode FROM chauffeurs WHERE naam <> 'Admin' ORDER BY naam ASC");
             $stmt->execute();
         }
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
@@ -1434,10 +1440,14 @@ if (isset($_GET['action'])) {
           chauffeurList.innerHTML = "";
           data.forEach(chauffeur => {
             const li = document.createElement("li");
+            const postcode = (chauffeur.postcode || "").trim();
+            const naamMetPostcode = postcode
+              ? '<strong>' + chauffeur.naam + ' (' + postcode + ')</strong>'
+              : '<strong>' + chauffeur.naam + '</strong>';
             if (chauffeur.naam === 'Admin') {
-              li.innerHTML = '<strong>' + chauffeur.naam + '</strong>';
+              li.innerHTML = naamMetPostcode;
             } else {
-              li.innerHTML = '<strong>' + chauffeur.naam + '</strong><span style="color:red;cursor:pointer;" onclick="deleteChauffeur(\'' + chauffeur.naam + '\')"> Verwijder</span>';
+              li.innerHTML = naamMetPostcode + '<span style="color:red;cursor:pointer;" onclick="deleteChauffeur(\'' + chauffeur.naam + '\')"> Verwijder</span>';
             }
             chauffeurList.appendChild(li);
           });
@@ -1501,6 +1511,7 @@ if (isset($_GET['action'])) {
       const tr = document.createElement("tr");
       const chauffeurValue = normalizeChauffeurValue(rit.chauffeur);
       tr.setAttribute("data-chauffeur", chauffeurValue);
+      tr.setAttribute("data-dirty", "false");
       tr.innerHTML = `
         <td>
           <input type="hidden" class="rowId" value="${rit.id ? rit.id : ''}">
@@ -1824,18 +1835,33 @@ if (isset($_GET['action'])) {
     function closeSendEmailOverlay() {
       document.getElementById("sendEmailOverlay").style.display = "none";
     }
+
+    function markRowDirty(row) {
+      if (row) {
+        row.setAttribute("data-dirty", "true");
+      }
+    }
     
     function addAutoSaveListeners(el) {
       el.addEventListener("change", function() {
         let row = el.closest("tr");
+        markRowDirty(row);
         if (el.getAttribute("data-field") === "status" && el.value.trim() === "Afgehandeld") {
           openEmailComposeOverlay(row);
         }
         updateRowBackground(row);
         autoSave();
       });
-      el.addEventListener("input", autoSave);
-      el.addEventListener("blur", autoSave);
+      el.addEventListener("input", function() {
+        const row = el.closest("tr");
+        markRowDirty(row);
+        autoSave();
+      });
+      el.addEventListener("blur", function() {
+        const row = el.closest("tr");
+        markRowDirty(row);
+        autoSave();
+      });
     }
     
     function updateRowBackground(row) {
@@ -1890,7 +1916,8 @@ if (isset($_GET['action'])) {
           afhaaltijd: row.querySelector("input[data-field='afhaaltijd']").value,
           gestort: row.querySelector("input[data-field='gestort']").value,
           gereden: row.querySelector("input[data-field='gereden']").value ? parseInt(Math.round(row.querySelector("input[data-field='gereden']").value)) : 0,
-          status: row.querySelector("select[data-field='status']").value
+          status: row.querySelector("select[data-field='status']").value,
+          __dirty: row.getAttribute("data-dirty") === "true"
         };
         ritten.push(data);
       });
@@ -1923,6 +1950,7 @@ if (isset($_GET['action'])) {
           if (idField && (!idField.value || idField.value === "") && ids[index]) {
             idField.value = ids[index];
           }
+          row.setAttribute("data-dirty", "false");
         });
         showExistingOfferAlerts(result.alerts || []);
         return result;
@@ -2169,6 +2197,7 @@ if (isset($_GET['action'])) {
       }
 
       const newRow = buildRitRow({});
+      newRow.setAttribute("data-dirty", "true");
       tableBody.appendChild(newRow);
       updateChauffeurSelect();
     }
