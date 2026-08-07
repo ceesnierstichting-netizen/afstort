@@ -75,7 +75,7 @@ if (!$ride) {
     <?php for ($i = 0; $i < 10; $i++): ?>
       <div class="briefje">
         <img src="logobriefje.png" alt="Logo" class="logo">
-        <div class="title">Collecte 2025</div>
+        <div class="title">Collecte 2026</div>
         <!-- Vervang de placeholders met de waarden uit de database -->
         <div class="placeholder"><?php echo htmlspecialchars($ride['collectegebied']); ?></div>
         <div class="placeholder"><?php echo htmlspecialchars($ride['wijknaam']); ?></div>
