@@ -1514,6 +1514,8 @@ if (isset($_GET['action'])) {
       const chauffeurValue = normalizeChauffeurValue(rit.chauffeur);
       tr.setAttribute("data-chauffeur", chauffeurValue);
       tr.setAttribute("data-dirty", "false");
+      tr.setAttribute("data-server-existing", rit.id ? "true" : "false");
+      tr.setAttribute("data-chauffeur-mail-sent", "false");
       tr.innerHTML = `
         <td>
           <input type="hidden" class="rowId" value="${rit.id ? rit.id : ''}">
@@ -1586,7 +1588,8 @@ if (isset($_GET['action'])) {
 
     function sendBasisemail(btn) {
       let row = btn.closest("tr");
-      const hadExistingRit = Boolean(row.querySelector(".rowId")?.value);
+      const wasServerExisting = row.getAttribute("data-server-existing") === "true";
+      const chauffeurMailSent = row.getAttribute("data-chauffeur-mail-sent") === "true";
 
       // >>> VALIDATIE voor contactbevestiging <<<
       if (!validateContactConfirmationRow(row)) {
@@ -1650,7 +1653,7 @@ if (isset($_GET['action'])) {
             alert("Fout bij versturen bevestiging naar contact: " + result.message);
           } else {
             alert("Bevestigingsmail verstuurd naar contactpersoon.");
-            if (!hadExistingRit) {
+            if (!wasServerExisting && !chauffeurMailSent) {
               sendRitMailToChauffeurs(row, ritId, false);
             }
           }
@@ -1771,6 +1774,7 @@ if (isset($_GET['action'])) {
       .then(res => {
         if (!res) return;
         if (res.status === "success") {
+          row.setAttribute("data-chauffeur-mail-sent", "true");
           alert("Chauffeur " + (gekozenNaam || "") + " is aangeschreven.");
         } else {
           alert("Fout bij versturen mail naar aangewezen chauffeur: " + (res.message || ""));
