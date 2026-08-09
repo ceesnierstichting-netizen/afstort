@@ -907,7 +907,8 @@ if (isset($_GET['action'])) {
     }
 
     #sendEmailOverlay,
-    #confirmRitModal {
+    #confirmRitModal,
+    #deleteRitModal {
       display: none;
       position: fixed;
       inset: 0;
@@ -918,7 +919,8 @@ if (isset($_GET['action'])) {
     }
 
     #sendEmailOverlay .overlayContent,
-    #confirmRitModal .modalContent {
+    #confirmRitModal .modalContent,
+    #deleteRitModal .modalContent {
       background: #fff;
       border-radius: 12px;
       padding: 20px;
@@ -952,6 +954,8 @@ if (isset($_GET['action'])) {
 
     #confirmRitBtn { background-color: var(--success); }
     #cancelRitBtn { background-color: var(--danger); }
+    #deleteRitConfirmBtn { background-color: var(--danger); }
+    #deleteRitCancelBtn { background-color: #6b7280; }
 
     #existingOfferNotice {
       position: fixed;
@@ -1142,6 +1146,14 @@ if (isset($_GET['action'])) {
     </div>
   </div>
 
+  <div id="deleteRitModal" style="display:none;">
+    <div class="modalContent">
+      <p id="deleteRitMessage">Weet je zeker dat je deze rit wilt verwijderen?</p>
+      <button id="deleteRitConfirmBtn">Verwijder rit</button>
+      <button id="deleteRitCancelBtn">Annuleer</button>
+    </div>
+  </div>
+
   <div id="existingOfferNotice" style="display:none;">
     <div class="existing-offer-notice-card">
       <div id="existingOfferNoticeText"></div>
@@ -1155,6 +1167,7 @@ if (isset($_GET['action'])) {
     const inactivityTimeout = 3600 * 1000;
     let autoLogoutTimer;
     let currentConfirmRow = null;
+    let currentDeleteRow = null;
     let saveTimer;
     const shownUpdateAlerts = new Set();
     const pendingExistingOfferNotices = [];
@@ -1166,7 +1179,26 @@ if (isset($_GET['action'])) {
     
     // ===== Helpers voor validatie =====
     function isEmpty(v){ return v === null || v === undefined || String(v).trim() === ""; }
-    function showIncompleteMsg(){ alert("Niet alle velden zijn ingevuld"); }
+    function showNotification(message, type = "info", timeoutMs = 5000) {
+      const notification = document.getElementById("notification");
+      if (!notification) {
+        return;
+      }
+
+      notification.textContent = message || "";
+      notification.style.display = "block";
+      notification.style.backgroundColor =
+        type === "error" ? "#b91c1c" :
+        type === "success" ? "#166534" :
+        "#1d4ed8";
+
+      window.clearTimeout(showNotification.hideTimer);
+      showNotification.hideTimer = window.setTimeout(() => {
+        notification.style.display = "none";
+      }, timeoutMs);
+    }
+
+    function showIncompleteMsg(){ showNotification("Niet alle velden zijn ingevuld", "error"); }
 
     function normalizeChauffeurValue(value) {
       const v = (value || "").trim();
@@ -1319,6 +1351,11 @@ if (isset($_GET['action'])) {
         document.getElementById("confirmRitModal").style.display = "none";
       });
       document.getElementById("confirmRitBtn")?.addEventListener("click", confirmRit);
+      document.getElementById("deleteRitCancelBtn")?.addEventListener("click", function() {
+        currentDeleteRow = null;
+        document.getElementById("deleteRitModal").style.display = "none";
+      });
+      document.getElementById("deleteRitConfirmBtn")?.addEventListener("click", confirmDeleteRit);
       document.getElementById("existingOfferNoticeClose")?.addEventListener("click", closeExistingOfferNotice);
     });
     
@@ -1650,9 +1687,9 @@ if (isset($_GET['action'])) {
         })
         .then(({ result, ritId }) => {
           if(result.status !== "success") {
-            alert("Fout bij versturen bevestiging naar contact: " + result.message);
+            showNotification("Fout bij versturen bevestiging naar contact: " + result.message, "error");
           } else {
-            alert("Bevestigingsmail verstuurd naar contactpersoon.");
+            showNotification("Bevestigingsmail verstuurd naar contactpersoon.", "success");
             if (!wasServerExisting && !chauffeurMailSent) {
               sendRitMailToChauffeurs(row, ritId, false);
             }
@@ -1660,7 +1697,7 @@ if (isset($_GET['action'])) {
         })
         .catch(err => {
           console.error("Fout bij versturen basis e-mail:", err);
-          alert("Fout bij versturen basis e-mail: " + (err.message || ""));
+          showNotification("Fout bij versturen basis e-mail: " + (err.message || ""), "error");
         });
     }
     
@@ -1688,14 +1725,14 @@ if (isset($_GET['action'])) {
         .then(r => r.json())
         .then(res => {
           if (res.status !== "success") {
-            alert("Fout bij versturen TEST-mail: " + (res.message || ""));
+            showNotification("Fout bij versturen TEST-mail: " + (res.message || ""), "error");
           } else {
-            alert("TEST-mail verstuurd naar mailnaarcees@gmail.com.");
+            showNotification("TEST-mail verstuurd naar mailnaarcees@gmail.com.", "success");
           }
         })
         .catch(err => {
           console.error("Fout bij TEST-mail:", err);
-          alert("Fout bij TEST-mail.");
+          showNotification("Fout bij TEST-mail.", "error");
         });
         return;
       }
@@ -1711,7 +1748,7 @@ if (isset($_GET['action'])) {
       .then(r => r.json())
       .then(res => {
         if (!res || res.status !== "ok") {
-          alert("Kon de dichtsbijzijnde chauffeur niet bepalen: " + (res && res.message ? res.message : "onbekende fout"));
+          showNotification("Kon de dichtstbijzijnde chauffeur niet bepalen: " + (res && res.message ? res.message : "onbekende fout"), "error", 7000);
           return;
         }
 
@@ -1722,7 +1759,7 @@ if (isset($_GET['action'])) {
         gekozenNaam = naam;
 
         if (!email) {
-          alert("Geen e-mailadres gevonden voor de aangewezen chauffeur.");
+          showNotification("Geen e-mailadres gevonden voor de aangewezen chauffeur.", "error");
           return;
         }
 
@@ -1775,14 +1812,14 @@ if (isset($_GET['action'])) {
         if (!res) return;
         if (res.status === "success") {
           row.setAttribute("data-chauffeur-mail-sent", "true");
-          alert("Chauffeur " + (gekozenNaam || "") + " is aangeschreven.");
+          showNotification("Nieuwe rit opgeslagen. Chauffeur " + (gekozenNaam || "") + " is aangeschreven.", "success", 7000);
         } else {
-          alert("Fout bij versturen mail naar aangewezen chauffeur: " + (res.message || ""));
+          showNotification("Fout bij versturen mail naar aangewezen chauffeur: " + (res.message || ""), "error", 7000);
         }
       })
       .catch(err => {
         console.error("Fout bij bepalen/versturen naar aangewezen chauffeur:", err);
-        alert("Fout bij bepalen/versturen naar aangewezen chauffeur.");
+        showNotification("Fout bij bepalen/versturen naar aangewezen chauffeur.", "error", 7000);
       });
     }
 
@@ -1808,9 +1845,31 @@ if (isset($_GET['action'])) {
       const ritId = idField ? idField.value : "";
       if (!ritId) {
         row.remove();
+        showNotification("Nieuwe, nog niet opgeslagen rit verwijderd.", "success");
         return;
       }
-      if (!confirm("Weet je zeker dat je deze rit wilt verwijderen?")) return;
+      clearTimeout(saveTimer);
+      currentDeleteRow = row;
+      document.getElementById("deleteRitModal").style.display = "flex";
+    }
+
+    function confirmDeleteRit() {
+      const row = currentDeleteRow;
+      currentDeleteRow = null;
+      document.getElementById("deleteRitModal").style.display = "none";
+
+      if (!row) {
+        return;
+      }
+
+      const idField = row.querySelector(".rowId");
+      const ritId = idField ? idField.value : "";
+      if (!ritId) {
+        row.remove();
+        showNotification("Nieuwe, nog niet opgeslagen rit verwijderd.", "success");
+        return;
+      }
+
       fetch(buildUrl("deleteRit"), {
         method: "POST",
         headers: {"Content-Type": "application/json"},
@@ -1818,10 +1877,13 @@ if (isset($_GET['action'])) {
       })
       .then(response => response.text())
       .then(text => {
-        alert(text);
+        showNotification(text || "Rit verwijderd.", "success");
         row.remove();
       })
-      .catch(err => console.error("Fout bij verwijderen rit:", err));
+      .catch(err => {
+        console.error("Fout bij verwijderen rit:", err);
+        showNotification("Fout bij verwijderen rit.", "error");
+      });
     }
     
     function openRitConfirmationModal(btn) {
@@ -1963,7 +2025,7 @@ if (isset($_GET['action'])) {
       })
       .catch(err => {
         console.error("Fout bij opslaan:", err);
-        alert("Opslaan van de rit is mislukt: " + err.message);
+        showNotification("Opslaan van de rit is mislukt: " + err.message, "error", 7000);
         throw err;
       });
     }
