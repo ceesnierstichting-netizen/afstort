@@ -71,12 +71,12 @@ $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? '')
       flex: 1;
       position: relative;
       border: 1px solid #000; 
-      padding: 10px; 
+      padding: 10px;
       box-sizing: border-box;
-      /* Achtergrondlogo: 125x125 px, 10px vanaf de rechterzijde en bovenaan */
-      background-image: url('logo.png');
+      /* Achtergrondlogo rechtsboven */
+      background-image: url('logobriefje.png');
       background-position: calc(100% - 10px) 0;
-      background-size: 125px 125px;
+      background-size: 110px auto;
       background-repeat: no-repeat;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
@@ -84,24 +84,25 @@ $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? '')
     .form-section h2 { 
       text-align: center; 
       margin-top: 0;
+      margin-bottom: 12px;
       font-size: 14pt; /* 2 punten kleiner */
     }
     .form-section h2 br { display: block; }
-    .field { margin-bottom: 8px; }
+    .field { margin-bottom: 6px; }
     .field label { display: inline-block; width: 140px; font-weight: bold; }
     .declaration { 
       font-size: 0.9em; 
-      margin-top: 15px; 
+      margin-top: 8px;
       text-align: center; 
       font-style: italic;
     }
     .declaration p { margin: 0; }
-    /* Twee extra witregels tussen Afhaaldag/tijd en declaratie */
-    .extra-space { height: 2em; }
+    .pre-declaration-space { height: 0.6em; }
+    .extra-space { height: 0.7em; }
     .signature-container {
       display: flex;
       justify-content: space-around;
-      margin-top: 20px;
+      margin-top: 12px;
     }
     .signature-item {
       text-align: center;
@@ -109,11 +110,11 @@ $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? '')
     }
     /* Handtekeningsectie: eerst "Handtekening", dan de rol, dan de naam */
     .handtekening-title { margin-bottom: 0; }
-    /* Vier <br> tussen de naam en de lijn (twee extra witregels) */
+    /* Iets compactere handtekeningruimte zodat de langere tekst op A4 blijft */
     .handtekening-break { margin-bottom: 0; }
     .exemplaar {
       text-align: center;
-      margin-top: 20px;
+      margin-top: 12px;
       font-style: italic;
     }
     /* Separator met verticale stippellijn en schaartje (schaartje omgedraaid met een kwartslag) */
@@ -155,10 +156,9 @@ $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? '')
         <label>Afhaaldag/tijd:</label> 
         <?php echo formatDatum($data['afhaalmoment']) . ' / ' . formatTijd($data['afhaaltijd']); ?>
       </div>
-      <!-- Twee extra witregels -->
-      <br><br>
+      <div class="pre-declaration-space"></div>
       <div class="declaration">
-        <p><strong>Ondergetekenden verklaren hierbij dat de bovengenoemde, collecteopbrengst door de contactpersoon is overgedragen en door de afstortvrijwilliger is ontvangen. Deze opbrengst zal nadat deze geteld is door de geldtelmachine van Geldmaat pas als officiële opbrengst worden geregistreerd.</strong></p>
+        <p><strong>Ondergetekenden verklaren hierbij dat de bovengenoemde, collecteopbrengst door de contactpersoon is overgedragen en door de afstortvrijwilliger is ontvangen. Deze opbrengst zal nadat deze geteld is door de geldtelmachine van Geldmaat pas als officiele opbrengst worden geregistreerd.</strong></p>
       </div>
       <div class="extra-space"></div>
       <div class="signature-container">
@@ -168,7 +168,7 @@ $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? '')
             Afstortvrijwilliger<br>
             <?php echo htmlspecialchars($data['chauffeur']); ?>
           </p>
-          <br><br><br><br>
+          <br><br><br>
           <p class="handtekening-break">_____________________</p>
         </div>
         <div class="signature-item">
@@ -177,7 +177,7 @@ $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? '')
             Contactpersoon<br>
             <?php echo htmlspecialchars($data['contactpersoon']); ?>
           </p>
-          <br><br><br><br>
+          <br><br><br>
           <p class="handtekening-break">_____________________</p>
         </div>
       </div>
@@ -202,9 +202,9 @@ $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? '')
         <label>Afhaaldag/tijd:</label>
         <?php echo formatDatum($data['afhaalmoment']) . ' / ' . formatTijd($data['afhaaltijd']); ?>
       </div>
-      <br><br>
+      <div class="pre-declaration-space"></div>
       <div class="declaration">
-        <p><strong>Ondergetekenden verklaren hierbij dat de bovengenoemde collecteopbrengst door de contactpersoon is overgedragen en door de afstortvrijwilliger is ontvangen.</strong></p>
+        <p><strong>Ondergetekenden verklaren hierbij dat de bovengenoemde, collecteopbrengst door de contactpersoon is overgedragen en door de afstortvrijwilliger is ontvangen. Deze opbrengst zal nadat deze geteld is door de geldtelmachine van Geldmaat pas als officiele opbrengst worden geregistreerd.</strong></p>
       </div>
       <div class="extra-space"></div>
       <div class="signature-container">
@@ -214,7 +214,7 @@ $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? '')
             Afstortvrijwilliger<br>
             <?php echo htmlspecialchars($data['chauffeur']); ?>
           </p>
-          <br><br><br><br>
+          <br><br><br>
           <p class="handtekening-break">_____________________</p>
         </div>
         <div class="signature-item">
@@ -223,7 +223,7 @@ $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? '')
             Contactpersoon<br>
             <?php echo htmlspecialchars($data['contactpersoon']); ?>
           </p>
-          <br><br><br><br>
+          <br><br><br>
           <p class="handtekening-break">_____________________</p>
         </div>
       </div>
