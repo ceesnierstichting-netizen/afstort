@@ -859,7 +859,7 @@ if (isset($_GET['action'])) {
       line-height: 1.45;
     }
 
-    .intro-video {
+    .intro-video a {
       color: var(--primary-dark);
       text-decoration: underline;
       font-weight: 600;
@@ -1068,7 +1068,9 @@ if (isset($_GET['action'])) {
         <li>De rode knop 'Rapport' aan de onderzijde geeft je een overzicht van al jouw ritten met de status 'Afgehandeld'. Hier vind je ook jouw gereden kilometers, incl. het te declareren bedrag. Voor de declaratie hoef je zelf <u>geen</u> actie te ondernemen, wij handelen dit verder af.</li>
       </ol>
 
-      <a class="intro-video" href="https://vimeo.com/1112880116" target="_blank" rel="noopener noreferrer">Voor een visuele uitleg, bekijk deze video.</a>
+      <p class="intro-video">
+        Voor een visuele uitleg, <a href="https://vimeo.com/1112880116" target="_blank" rel="noopener noreferrer">bekijk de video</a> of gebruik <a href="/afstort/handleiding_afstort.pdf" target="_blank" rel="noopener noreferrer">deze PDF variant</a>.
+      </p>
     </section>
 
     <section id="transport-overzicht" class="card">
