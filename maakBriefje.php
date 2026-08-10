@@ -158,7 +158,7 @@ $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? '')
       <!-- Twee extra witregels -->
       <br><br>
       <div class="declaration">
-        <p><strong>Ondergetekenden verklaren hierbij dat de bovengenoemde collecteopbrengst door de contactpersoon is overgedragen en door de afstortvrijwilliger is ontvangen.</strong></p>
+        <p><strong>Ondergetekenden verklaren hierbij dat de bovengenoemde, collecteopbrengst door de contactpersoon is overgedragen en door de afstortvrijwilliger is ontvangen. Deze opbrengst zal nadat deze geteld is door de geldtelmachine van Geldmaat pas als officiële opbrengst worden geregistreerd.</strong></p>
       </div>
       <div class="extra-space"></div>
       <div class="signature-container">
