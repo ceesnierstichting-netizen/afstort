@@ -55,6 +55,34 @@ function resolveCoordinatesFromPostcodeInput($postcodeValue) {
     return [(float)$latTmp, (float)$lonTmp];
 }
 
+function normalizeOptionalPostcode($postcodeValue) {
+    $postcodeValue = trim((string)$postcodeValue);
+    if ($postcodeValue === '') {
+        return null;
+    }
+
+    $pc6 = extractPostcode6($postcodeValue);
+    return $pc6 !== '' ? $pc6 : false;
+}
+
+function normalizeOptionalEmail($emailValue) {
+    $emailValue = trim((string)$emailValue);
+    if ($emailValue === '') {
+        return null;
+    }
+
+    return filter_var($emailValue, FILTER_VALIDATE_EMAIL) ? $emailValue : false;
+}
+
+function normalizeOptionalIban($ibanValue) {
+    $ibanValue = strtoupper(preg_replace('/\s+/', '', trim((string)$ibanValue)));
+    if ($ibanValue === '') {
+        return null;
+    }
+
+    return preg_match('/^[A-Z]{2}[0-9]{2}[A-Z0-9]{8,30}$/', $ibanValue) ? $ibanValue : false;
+}
+
 if (isset($_GET['action'])) {
     $action = $_GET['action'];
     
@@ -341,12 +369,20 @@ if (isset($_GET['action'])) {
         }
         $data = json_decode(file_get_contents('php://input'), true);
         $naam = trim($data['chauffeur']);
-        $email = trim($data['email'] ?? '');
-        $iban = trim($data['IBAN'] ?? '');
+        $email = normalizeOptionalEmail($data['email'] ?? '');
+        $iban = normalizeOptionalIban($data['IBAN'] ?? '');
         $wachtwoordInput = trim($data['wachtwoord'] ?? '');
 
         if ($naam === "") {
             echo "Lege waarde.";
+            exit();
+        }
+        if ($email === false) {
+            echo "Ongeldig e-mailadres.";
+            exit();
+        }
+        if ($iban === false) {
+            echo "Ongeldig IBAN.";
             exit();
         }
         if ($wachtwoordInput === "") {
@@ -361,30 +397,46 @@ if (isset($_GET['action'])) {
         $wachtwoord = password_hash($wachtwoordInput, PASSWORD_DEFAULT);
 
         // Postcode (optioneel) en lat/lon bepalen op basis van pc6
-        $postcode = trim($data['postcode'] ?? '');
+        $postcode = normalizeOptionalPostcode($data['postcode'] ?? '');
+        if ($postcode === false) {
+            echo "Ongeldige postcode. Gebruik 1234AB.";
+            exit();
+        }
         list($lat, $lon) = resolveCoordinatesFromPostcodeInput($postcode);
 
-        $stmt = $pdo->prepare("INSERT INTO chauffeurs (naam, email, wachtwoord, IBAN, postcode, lat, lon) VALUES (:naam, :email, :wachtwoord, :IBAN, :postcode, :lat, :lon)");
-        if ($stmt->execute([
-            ':naam'       => $naam, 
-            ':email'      => $email, 
-            ':wachtwoord' => $wachtwoord,
-            ':IBAN'       => $iban,
-            ':postcode'   => $postcode,
-            ':lat'        => $lat,
-            ':lon'        => $lon
-        ])) {
-            require_once 'sendBevestigingInlog.php';
-            $mailResponse = sendBevestigingInlogMail([
-                'email'      => $email,
-                'naam'       => $naam,
-                'wachtwoord' => $wachtwoordInput,
-                'IBAN'       => $iban
-            ]);
-            error_log("Internal mail response: " . json_encode($mailResponse));
-            echo "Chauffeur toegevoegd.";
-        } else {
-            echo "Fout bij toevoegen chauffeur.";
+        try {
+            $stmt = $pdo->prepare("INSERT INTO chauffeurs (naam, email, wachtwoord, IBAN, postcode, lat, lon) VALUES (:naam, :email, :wachtwoord, :IBAN, :postcode, :lat, :lon)");
+            if ($stmt->execute([
+                ':naam'       => $naam,
+                ':email'      => $email,
+                ':wachtwoord' => $wachtwoord,
+                ':IBAN'       => $iban,
+                ':postcode'   => $postcode,
+                ':lat'        => $lat,
+                ':lon'        => $lon
+            ])) {
+                require_once 'sendBevestigingInlog.php';
+                $mailResponse = sendBevestigingInlogMail([
+                    'email'      => $email,
+                    'naam'       => $naam,
+                    'wachtwoord' => $wachtwoordInput,
+                    'IBAN'       => $iban
+                ]);
+                error_log("Internal mail response: " . json_encode($mailResponse));
+                echo "Chauffeur toegevoegd.";
+            } else {
+                echo "Fout bij toevoegen chauffeur.";
+            }
+        } catch (PDOException $e) {
+            if (($e->errorInfo[1] ?? null) === 1062) {
+                http_response_code(409);
+                echo "Er bestaat al een chauffeur met deze naam.";
+            } elseif (($e->errorInfo[1] ?? null) === 3819) {
+                http_response_code(422);
+                echo "De chauffeur kon niet worden opgeslagen door een databasecontrole. Controleer postcode, e-mail en IBAN.";
+            } else {
+                throw $e;
+            }
         }
         exit();
         
@@ -397,8 +449,16 @@ if (isset($_GET['action'])) {
         }
         $data = json_decode(file_get_contents('php://input'), true);
         $naam = trim($data['chauffeur']);
-        $email = trim($data['email'] ?? '');
-        $postcode = trim($data['postcode'] ?? '');
+        $email = normalizeOptionalEmail($data['email'] ?? '');
+        $postcode = normalizeOptionalPostcode($data['postcode'] ?? '');
+        if ($email === false) {
+            echo "Ongeldig e-mailadres.";
+            exit();
+        }
+        if ($postcode === false) {
+            echo "Ongeldige postcode. Gebruik 1234AB.";
+            exit();
+        }
         list($lat, $lon) = resolveCoordinatesFromPostcodeInput($postcode);
 
         if ($naam !== "") {
@@ -2200,12 +2260,14 @@ if (isset($_GET['action'])) {
       .catch(err => { console.error("Fout bij verwijderen chauffeur:", err); });
     }
     function addChauffeur() {
+      const addButton = document.getElementById("add-chauffeur-button");
       const chauffeurName = document.getElementById("newChauffeur").value.trim();
       const chauffeurPostcode = document.getElementById("newChauffeurPostcode").value.trim();
       const chauffeurEmail = document.getElementById("newChauffeurEmail").value.trim();
       const chauffeurIBAN = document.getElementById("newChauffeurIBAN").value.trim();
       const chauffeurPassword = document.getElementById("newChauffeurPassword").value.trim();
       if (!chauffeurName) { alert("Vul een naam in."); return; }
+      addButton.disabled = true;
       fetch(buildUrl("addChauffeur"), {
         method: "POST",
         headers: {"Content-Type": "application/json"},
@@ -2218,8 +2280,17 @@ if (isset($_GET['action'])) {
         }
         return text;
       })
-      .then(text => { alert(text); loadChauffeurs(); })
-      .catch(err => { console.error("Fout bij toevoegen chauffeur:", err); alert(err.message); });
+      .then(text => {
+        document.getElementById("newChauffeur").value = "";
+        document.getElementById("newChauffeurPostcode").value = "";
+        document.getElementById("newChauffeurEmail").value = "";
+        document.getElementById("newChauffeurIBAN").value = "";
+        document.getElementById("newChauffeurPassword").value = "";
+        alert(text);
+        loadChauffeurs();
+      })
+      .catch(err => { console.error("Fout bij toevoegen chauffeur:", err); alert(err.message); })
+      .finally(() => { addButton.disabled = false; });
     }
     function rebuildAllGeocodes() {
       if (!confirm("Weet je zeker dat je alle lat/lon opnieuw wilt laten berekenen?")) return;
