@@ -364,27 +364,36 @@ if (isset($_GET['action'])) {
         $postcode = trim($data['postcode'] ?? '');
         list($lat, $lon) = resolveCoordinatesFromPostcodeInput($postcode);
 
-        $stmt = $pdo->prepare("INSERT INTO chauffeurs (naam, email, wachtwoord, IBAN, postcode, lat, lon) VALUES (:naam, :email, :wachtwoord, :IBAN, :postcode, :lat, :lon)");
-        if ($stmt->execute([
-            ':naam'       => $naam, 
-            ':email'      => $email, 
-            ':wachtwoord' => $wachtwoord,
-            ':IBAN'       => $iban,
-            ':postcode'   => $postcode,
-            ':lat'        => $lat,
-            ':lon'        => $lon
-        ])) {
-            require_once 'sendBevestigingInlog.php';
-            $mailResponse = sendBevestigingInlogMail([
-                'email'      => $email,
-                'naam'       => $naam,
-                'wachtwoord' => $wachtwoordInput,
-                'IBAN'       => $iban
-            ]);
-            error_log("Internal mail response: " . json_encode($mailResponse));
-            echo "Chauffeur toegevoegd.";
-        } else {
-            echo "Fout bij toevoegen chauffeur.";
+        try {
+            $stmt = $pdo->prepare("INSERT INTO chauffeurs (naam, email, wachtwoord, IBAN, postcode, lat, lon) VALUES (:naam, :email, :wachtwoord, :IBAN, :postcode, :lat, :lon)");
+            if ($stmt->execute([
+                ':naam'       => $naam,
+                ':email'      => $email,
+                ':wachtwoord' => $wachtwoord,
+                ':IBAN'       => $iban,
+                ':postcode'   => $postcode,
+                ':lat'        => $lat,
+                ':lon'        => $lon
+            ])) {
+                require_once 'sendBevestigingInlog.php';
+                $mailResponse = sendBevestigingInlogMail([
+                    'email'      => $email,
+                    'naam'       => $naam,
+                    'wachtwoord' => $wachtwoordInput,
+                    'IBAN'       => $iban
+                ]);
+                error_log("Internal mail response: " . json_encode($mailResponse));
+                echo "Chauffeur toegevoegd.";
+            } else {
+                echo "Fout bij toevoegen chauffeur.";
+            }
+        } catch (PDOException $e) {
+            if (($e->errorInfo[1] ?? null) === 1062) {
+                http_response_code(409);
+                echo "Er bestaat al een chauffeur met deze naam.";
+            } else {
+                throw $e;
+            }
         }
         exit();
         
@@ -2200,12 +2209,14 @@ if (isset($_GET['action'])) {
       .catch(err => { console.error("Fout bij verwijderen chauffeur:", err); });
     }
     function addChauffeur() {
+      const addButton = document.getElementById("add-chauffeur-button");
       const chauffeurName = document.getElementById("newChauffeur").value.trim();
       const chauffeurPostcode = document.getElementById("newChauffeurPostcode").value.trim();
       const chauffeurEmail = document.getElementById("newChauffeurEmail").value.trim();
       const chauffeurIBAN = document.getElementById("newChauffeurIBAN").value.trim();
       const chauffeurPassword = document.getElementById("newChauffeurPassword").value.trim();
       if (!chauffeurName) { alert("Vul een naam in."); return; }
+      addButton.disabled = true;
       fetch(buildUrl("addChauffeur"), {
         method: "POST",
         headers: {"Content-Type": "application/json"},
@@ -2218,8 +2229,17 @@ if (isset($_GET['action'])) {
         }
         return text;
       })
-      .then(text => { alert(text); loadChauffeurs(); })
+      .then(text => {
+        document.getElementById("newChauffeur").value = "";
+        document.getElementById("newChauffeurPostcode").value = "";
+        document.getElementById("newChauffeurEmail").value = "";
+        document.getElementById("newChauffeurIBAN").value = "";
+        document.getElementById("newChauffeurPassword").value = "";
+        alert(text);
+        loadChauffeurs();
+      })
       .catch(err => { console.error("Fout bij toevoegen chauffeur:", err); alert(err.message); });
+      .finally(() => { addButton.disabled = false; });
     }
     function rebuildAllGeocodes() {
       if (!confirm("Weet je zeker dat je alle lat/lon opnieuw wilt laten berekenen?")) return;
