@@ -284,6 +284,7 @@ function twofa_send_email_code($email, $code, $name = '') {
 function twofa_start_pending_login(array $user) {
     session_regenerate_id(true);
     unset(
+        $_SESSION['is_medewerker'],
         $_SESSION['username'],
         $_SESSION['fullAccess'],
         $_SESSION['user_id'],
@@ -331,7 +332,8 @@ function twofa_clear_pending_login() {
 function twofa_finish_login(array $user) {
     session_regenerate_id(true);
     $_SESSION['username'] = $user['naam'];
-    $_SESSION['fullAccess'] = normalizeFullAccess($user['fullAccess']);
+    $_SESSION['is_medewerker'] = isMedewerker($user);
+    $_SESSION['fullAccess'] = hasDashboardAccess($user);
     $_SESSION['user_id'] = (int)$user['id'];
     $_SESSION['user_email'] = $user['email'] ?? '';
     $_SESSION['twofa_verified'] = true;

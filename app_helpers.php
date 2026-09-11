@@ -1,5 +1,25 @@
 <?php
 
+function isMedewerker(array $user) {
+    return !empty($user['is_medewerker']);
+}
+
+function hasDashboardAccess(array $user) {
+    return isMedewerker($user) || normalizeFullAccess($user['fullAccess'] ?? false);
+}
+
+function hasAdminPermissions(array $user) {
+    return !isMedewerker($user) && normalizeFullAccess($user['fullAccess'] ?? false);
+}
+
+function assertNotMedewerkerRecipient(PDO $pdo, $naam, $email = '') {
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM chauffeurs WHERE is_medewerker = 1 AND (naam = ? OR email = ?)');
+    $stmt->execute([trim((string)$naam), trim((string)$email)]);
+    if ((int)$stmt->fetchColumn() > 0) {
+        throw new RuntimeException('Een medewerker kan geen ritten aangeboden of toegewezen krijgen.');
+    }
+}
+
 function normalizeFullAccess($value) {
     if (is_bool($value)) {
         return $value;
@@ -190,6 +210,7 @@ function resetRitAanbiedingen(PDO $pdo, $ritId) {
 }
 
 function registreerRitAanbieding(PDO $pdo, $ritId, $chauffeurNaam, $chauffeurEmail = null, $afstandKm = null) {
+    assertNotMedewerkerRecipient($pdo, $chauffeurNaam, $chauffeurEmail);
     ensureRitAanbiedingenTable($pdo);
 
     $ritId = (int)$ritId;

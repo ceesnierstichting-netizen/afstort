@@ -5,6 +5,8 @@ error_reporting(E_ALL);
 require_once('session.php');
 require_once('config.php');
 
+refreshCurrentUserAccess($pdo);
+
 // Zorg dat de gebruiker via 2FA is ingelogd
 if (!isset($_SESSION['fullAccess']) || empty($_SESSION['twofa_verified'])) {
     header("HTTP/1.1 401 Unauthorized");
@@ -40,6 +42,17 @@ function resolveCoordinatesForSavedRit($postcodePlaats) {
     }
 
     return [(float)$latTmp, (float)$lonTmp];
+}
+
+// Valideer alle ontvangers voordat de eerste wijziging wordt opgeslagen.
+foreach ($data as $rit) {
+    try {
+        assertNotMedewerkerRecipient($pdo, $rit['chauffeur'] ?? '');
+    } catch (RuntimeException $e) {
+        http_response_code(422);
+        echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+        exit;
+    }
 }
 
 $stmtExistingRit = $pdo->prepare("SELECT postcodePlaats, lat, lon FROM ritten WHERE id = :id");

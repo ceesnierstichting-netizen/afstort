@@ -1,6 +1,9 @@
 <?php
 
 require_once __DIR__ . '/../app_helpers.php';
+require_once __DIR__ . '/../twofa.php';
+
+session_start();
 
 function assertSameValue($expected, $actual, $label) {
     if ($expected !== $actual) {
@@ -22,4 +25,20 @@ assertSameValue(false, shouldReuseStoredCoordinates('1234', '1234 AB'), 'coordin
 assertSameValue(true, isMobileUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)'), 'mobiele user agent iphone');
 assertSameValue(false, isMobileUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'), 'desktop user agent windows');
 
+$admin = ['id' => 1, 'naam' => 'Admin', 'email' => 'admin@example.test', 'fullAccess' => 1, 'is_medewerker' => 0];
+$medewerker = ['id' => 2, 'naam' => 'Medewerker', 'email' => 'medewerker@example.test', 'fullAccess' => 0, 'is_medewerker' => 1];
+$chauffeur = ['id' => 3, 'naam' => 'Chauffeur', 'email' => 'chauffeur@example.test', 'fullAccess' => 0, 'is_medewerker' => 0];
+foreach ([[$admin, true, true], [$medewerker, true, false], [$chauffeur, false, false]] as [$user, $dashboard, $adminRights]) {
+    assertSameValue($dashboard, hasDashboardAccess($user), $user['naam'] . ' dashboard');
+    assertSameValue($adminRights, hasAdminPermissions($user), $user['naam'] . ' beheerdersacties');
+    twofa_start_pending_login($user);
+    assertSameValue(false, isset($_SESSION['fullAccess']), 'geen toegang voordat 2FA is afgerond');
+    twofa_finish_login($user);
+    assertSameValue($dashboard, $_SESSION['fullAccess'], $user['naam'] . ' sessietoegang na 2FA');
+    assertSameValue($adminRights, hasAdminPermissions($_SESSION), $user['naam'] . ' sessierechten na 2FA');
+}
+assertSameValue(false, hasAdminPermissions(['fullAccess' => 1, 'is_medewerker' => 1]), 'medewerker blijft beperkt bij fullAccess');
+assertSameValue(false, shouldUseMobileDriverView(hasDashboardAccess($medewerker)), 'medewerker krijgt geen chauffeursweergave');
+
+session_destroy();
 fwrite(STDOUT, "Regression checks passed.\n");

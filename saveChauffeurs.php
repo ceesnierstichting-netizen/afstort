@@ -5,6 +5,8 @@ error_reporting(E_ALL);
 require_once('session.php');
 require_once('config.php');
 
+refreshCurrentUserAccess($pdo);
+
 // Alleen Full Access-gebruikers mogen chauffeurs bulk opslaan
 if (empty($_SESSION['fullAccess']) || empty($_SESSION['twofa_verified'])) {
     header("HTTP/1.1 401 Unauthorized");
@@ -21,6 +23,16 @@ $data = json_decode($input, true);
 if (!$data) {
     echo json_encode(["status" => "error", "message" => "Geen data ontvangen."]);
     exit;
+}
+
+if (isMedewerker($_SESSION)) {
+    foreach ($data as $chauffeur) {
+        if (empty($chauffeur['id'])) {
+            http_response_code(403);
+            echo json_encode(['status' => 'error', 'message' => 'Je mag geen chauffeurs aanmaken.']);
+            exit;
+        }
+    }
 }
 
 function resolveCoordinatesForSavedChauffeur($postcode) {
@@ -42,7 +54,7 @@ function resolveCoordinatesForSavedChauffeur($postcode) {
     return [(float)$latTmp, (float)$lonTmp];
 }
 
-$stmtExistingChauffeur = $pdo->prepare("SELECT postcode, lat, lon FROM chauffeurs WHERE id = :id");
+$stmtExistingChauffeur = $pdo->prepare("SELECT postcode, lat, lon FROM chauffeurs WHERE is_medewerker = 0 AND id = :id");
 $ids = [];
 foreach ($data as $i => $chauffeur) {
     $postcode = trim($chauffeur['postcode'] ?? '');
@@ -66,7 +78,7 @@ foreach ($data as $i => $chauffeur) {
             postcode = :postcode,
             lat = :lat,
             lon = :lon
-            WHERE id = :id");
+            WHERE is_medewerker = 0 AND id = :id");
         $stmt->execute([
             ':naam'  => $chauffeur['naam'],
             ':email' => $chauffeur['email'],

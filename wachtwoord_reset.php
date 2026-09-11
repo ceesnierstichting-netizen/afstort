@@ -15,6 +15,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         die("Ongeldige of verlopen resetlink.");
     }
 
+    if (!preg_match('/^(?=.*\d)(?=.*[^\da-zA-Z]).{8,}$/', $wachtwoord)) {
+        http_response_code(422);
+        exit('Gebruik minimaal 8 tekens, waaronder een cijfer en een leesteken.');
+    }
     $hashed = password_hash($wachtwoord, PASSWORD_DEFAULT);
     $stmt = $pdo->prepare("UPDATE chauffeurs SET wachtwoord = ? WHERE email = ?");
     $stmt->execute([$hashed, $reset['email']]);
