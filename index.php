@@ -357,6 +357,51 @@ if (isset($_GET['action'])) {
         }
         exit();
         
+    } elseif ($action === 'loadMedewerkers' || $action === 'deleteMedewerker') {
+        header('Content-Type: application/json');
+        if (!$fullAccess) {
+            http_response_code(403);
+            echo json_encode(['message' => 'Geen toegang.']);
+            exit;
+        }
+        if ($action === 'loadMedewerkers') {
+            $stmt = $pdo->query('SELECT id, naam, email FROM chauffeurs WHERE is_medewerker = 1 ORDER BY naam ASC');
+            echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+            exit;
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !hash_equals($_SESSION['medewerker_csrf'], (string)($data['csrf'] ?? ''))) {
+            http_response_code(403);
+            echo json_encode(['message' => 'Ververs de pagina en probeer opnieuw.']);
+            exit;
+        }
+        $id = (int)($data['id'] ?? 0);
+        if ($id <= 0 || $id === (int)($_SESSION['user_id'] ?? 0)) {
+            http_response_code(422);
+            echo json_encode(['message' => 'Je kunt je eigen account niet verwijderen.']);
+            exit;
+        }
+        try {
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare('SELECT email FROM chauffeurs WHERE id = ? AND is_medewerker = 1 FOR UPDATE');
+            $stmt->execute([$id]);
+            $medewerker = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$medewerker) {
+                $pdo->rollBack();
+                http_response_code(404);
+                echo json_encode(['message' => 'Medewerker niet gevonden.']);
+                exit;
+            }
+            $pdo->prepare('DELETE FROM wachtwoord_resets WHERE email = ?')->execute([$medewerker['email']]);
+            $pdo->prepare('DELETE FROM chauffeurs WHERE id = ? AND is_medewerker = 1')->execute([$id]);
+            $pdo->commit();
+            echo json_encode(['message' => 'Medewerker verwijderd.']);
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            http_response_code(500);
+            echo json_encode(['message' => 'Medewerker verwijderen is mislukt.']);
+        }
+        exit;
     } elseif ($action === 'loadChauffeurs') {
         header('Content-Type: application/json');
         if (!$fullAccess) {
@@ -748,6 +793,18 @@ if (isset($_GET['action'])) {
     .stack-title {
       margin: 0 0 12px;
       color: #111827;
+    }
+
+    .gebruikerslijsten { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; margin-bottom: 24px; }
+    .medewerkers-kolom { border-left: 1px solid #cfd8e3; padding-left: 28px; }
+    #medewerkerList { margin: 0; padding-left: 20px; }
+    #medewerkerList li { margin-bottom: 10px; overflow-wrap: anywhere; }
+    #medewerkerList .medewerker-delete { background: none; border: 0; padding: 0; margin: 0 0 0 10px; color: #b91c1c; font: inherit; text-decoration: underline; cursor: pointer; }
+    #medewerkerList .medewerker-delete:hover { color: #7f1d1d; transform: none; }
+    #medewerkerList .medewerker-delete:disabled { opacity: 0.5; cursor: wait; }
+    @media (max-width: 700px) {
+      .gebruikerslijsten { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+      .medewerkers-kolom { border-left: 0; border-top: 1px solid #cfd8e3; padding: 20px 0 0; }
     }
 
     #chauffeurList {
@@ -1150,8 +1207,16 @@ if (isset($_GET['action'])) {
 
     <?php if ($fullAccess): ?>
     <section id="chauffeur-section" class="card">
+      <div class="gebruikerslijsten">
+      <div>
       <h2 class="stack-title">Chauffeurs</h2>
       <ul id="chauffeurList"></ul>
+      </div>
+      <div class="medewerkers-kolom">
+        <h2 class="stack-title">Medewerkers</h2>
+        <ul id="medewerkerList" aria-live="polite"></ul>
+      </div>
+      </div>
       <?php if ($canAdmin): ?>
       <div class="form-grid">
         <input type="text" id="newChauffeur" placeholder="Naam">
@@ -1490,6 +1555,7 @@ if (isset($_GET['action'])) {
       loadEmailTemplate6();
       loadChauffeurs();
       loadRitten();
+      if (fullAccess) loadMedewerkers();
       
       document.getElementById("cancelRitBtn")?.addEventListener("click", function() {
         document.getElementById("confirmRitModal").style.display = "none";
@@ -1611,6 +1677,55 @@ if (isset($_GET['action'])) {
 
           return payload;
         });
+    }
+
+    async function loadMedewerkers() {
+      const list = document.getElementById('medewerkerList');
+      if (!list) return;
+      try {
+        const response = await fetch(buildUrl('loadMedewerkers'));
+        const data = await response.json();
+        if (!response.ok || !Array.isArray(data)) throw new Error(data.message || 'Medewerkers laden is mislukt.');
+        list.replaceChildren();
+        if (data.length === 0) {
+          const empty = document.createElement('li');
+          empty.textContent = 'Nog geen medewerkers toegevoegd.';
+          list.appendChild(empty);
+        }
+        data.forEach(medewerker => {
+          const li = document.createElement('li');
+          const name = document.createElement('strong');
+          name.textContent = medewerker.naam;
+          li.append(name, document.createTextNode(' (' + medewerker.email + ')'));
+          if (Number(medewerker.id) !== <?php echo (int)($_SESSION['user_id'] ?? 0); ?>) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'medewerker-delete';
+            button.textContent = 'Verwijderen';
+            button.setAttribute('aria-label', medewerker.naam + ' verwijderen');
+            button.addEventListener('click', async () => {
+              if (!confirm('Wil je medewerker ' + medewerker.naam + ' verwijderen? Dit account heeft daarna geen toegang meer.')) return;
+              button.disabled = true;
+              try {
+                const response = await fetch(buildUrl('deleteMedewerker'), {
+                  method: 'POST', headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({id: medewerker.id, csrf: <?php echo json_encode($_SESSION['medewerker_csrf']); ?>})
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.message || 'Verwijderen is mislukt.');
+                await loadMedewerkers();
+              } catch (error) { alert(error.message); button.disabled = false; }
+            });
+            li.appendChild(button);
+          }
+          list.appendChild(li);
+        });
+      } catch (error) {
+        list.replaceChildren();
+        const item = document.createElement('li');
+        item.textContent = error.message;
+        list.appendChild(item);
+      }
     }
 
     function loadChauffeurs() {
@@ -2356,7 +2471,7 @@ if (isset($_GET['action'])) {
         });
         const data = await response.json();
         result.textContent = data.message;
-        if (data.created) form.reset();
+        if (data.created) { form.reset(); loadMedewerkers(); }
       } catch (error) {
         result.textContent = 'Geen bevestiging ontvangen. Controleer of het account bestaat voordat je opnieuw probeert.';
       } finally { button.disabled = false; }
