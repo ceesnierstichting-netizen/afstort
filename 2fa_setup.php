@@ -270,6 +270,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <label>Setup key voor handmatige invoer</label>
         <code class="setup-key"><?php echo htmlspecialchars($setupKey); ?></code>
 
+        <?php if (!empty($user['email']) && filter_var($user['email'], FILTER_VALIDATE_EMAIL)): ?>
+        <p>Je kunt de tweestapsverificatie ook via e-mail afhandelen.
+          <a href="2fa_verify.php">Ontvang een verificatiecode per e-mail</a>.
+        </p>
+        <?php endif; ?>
         <form method="post" action="" novalidate>
             <label for="twofa_code">Controlecode</label>
             <input

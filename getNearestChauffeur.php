@@ -98,7 +98,7 @@ $ritLat = (float)$ritLat;
 $ritLon = (float)$ritLon;
 
 // ---- 4. Chauffeurs ophalen ----
-$stmt = $pdo->query("\n    SELECT id, naam, email, postcode, lat, lon\n    FROM chauffeurs\n    WHERE naam <> 'Admin'\n      AND email <> ''\n");
+$stmt = $pdo->query("\n    SELECT id, naam, email, postcode, lat, lon\n    FROM chauffeurs\n    WHERE is_medewerker = 0 AND naam <> 'Admin'\n      AND email <> ''\n");
 $chauffeurs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 if (!$chauffeurs) {

@@ -15,6 +15,8 @@ if (!isset($_SESSION['username']) || empty($_SESSION['twofa_verified'])) {
 refreshCurrentUserAccess($pdo);
 
 $fullAccess = !empty($_SESSION['fullAccess']);
+$canAdmin = hasAdminPermissions($_SESSION);
+$_SESSION['medewerker_csrf'] = $_SESSION['medewerker_csrf'] ?? bin2hex(random_bytes(32));
 $username   = $_SESSION['username'] ?? '';
 
 if (isset($_GET['view']) && !isset($_GET['action'])) {
@@ -85,6 +87,12 @@ function normalizeOptionalIban($ibanValue) {
 
 if (isset($_GET['action'])) {
     $action = $_GET['action'];
+    if (in_array($action, ['deleteRit', 'addChauffeur', 'rebuildAllGeocodes'], true) && !$canAdmin) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'error', 'message' => 'Je hebt geen rechten voor deze actie.']);
+        exit;
+    }
     
     if ($action === 'loadRitten') {
         header('Content-Type: application/json');
@@ -165,6 +173,7 @@ if (isset($_GET['action'])) {
                 $verwachtBedrag = trim((string)($rit['verwachtBedrag'] ?? ''));
                 $soort = trim($rit['soort'] ?? 'munt- en briefgeld');
                 $chauffeur = trim($rit['chauffeur'] ?? 'Chauffeur kiezen');
+                assertNotMedewerkerRecipient($pdo, $chauffeur);
                 $afhaalmoment = trim($rit['afhaalmoment'] ?? '');
                 $afhaaltijd = trim($rit['afhaaltijd'] ?? '');
                 $gestort = trim((string)($rit['gestort'] ?? ''));
@@ -348,13 +357,58 @@ if (isset($_GET['action'])) {
         }
         exit();
         
+    } elseif ($action === 'loadMedewerkers' || $action === 'deleteMedewerker') {
+        header('Content-Type: application/json');
+        if (!$fullAccess) {
+            http_response_code(403);
+            echo json_encode(['message' => 'Geen toegang.']);
+            exit;
+        }
+        if ($action === 'loadMedewerkers') {
+            $stmt = $pdo->query('SELECT id, naam, email FROM chauffeurs WHERE is_medewerker = 1 ORDER BY naam ASC');
+            echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+            exit;
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !hash_equals($_SESSION['medewerker_csrf'], (string)($data['csrf'] ?? ''))) {
+            http_response_code(403);
+            echo json_encode(['message' => 'Ververs de pagina en probeer opnieuw.']);
+            exit;
+        }
+        $id = (int)($data['id'] ?? 0);
+        if ($id <= 0 || $id === (int)($_SESSION['user_id'] ?? 0)) {
+            http_response_code(422);
+            echo json_encode(['message' => 'Je kunt je eigen account niet verwijderen.']);
+            exit;
+        }
+        try {
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare('SELECT email FROM chauffeurs WHERE id = ? AND is_medewerker = 1 FOR UPDATE');
+            $stmt->execute([$id]);
+            $medewerker = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$medewerker) {
+                $pdo->rollBack();
+                http_response_code(404);
+                echo json_encode(['message' => 'Medewerker niet gevonden.']);
+                exit;
+            }
+            $pdo->prepare('DELETE FROM wachtwoord_resets WHERE email = ?')->execute([$medewerker['email']]);
+            $pdo->prepare('DELETE FROM chauffeurs WHERE id = ? AND is_medewerker = 1')->execute([$id]);
+            $pdo->commit();
+            echo json_encode(['message' => 'Medewerker verwijderd.']);
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            http_response_code(500);
+            echo json_encode(['message' => 'Medewerker verwijderen is mislukt.']);
+        }
+        exit;
     } elseif ($action === 'loadChauffeurs') {
         header('Content-Type: application/json');
         if (!$fullAccess) {
             $stmt = $pdo->prepare("SELECT naam, email, postcode FROM chauffeurs WHERE naam = :username");
             $stmt->execute([':username' => $username]);
         } else {
-            $stmt = $pdo->prepare("SELECT naam, email, postcode FROM chauffeurs WHERE naam <> 'Admin' ORDER BY naam ASC");
+            $stmt = $pdo->prepare("SELECT naam, email, postcode FROM chauffeurs WHERE is_medewerker = 0 AND naam <> 'Admin' ORDER BY naam ASC");
             $stmt->execute();
         }
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
@@ -473,7 +527,7 @@ if (isset($_GET['action'])) {
                 }
             }
 
-            $stmt = $pdo->prepare("UPDATE chauffeurs SET email = :email, postcode = :postcode, lat = :lat, lon = :lon WHERE naam = :naam");
+            $stmt = $pdo->prepare("UPDATE chauffeurs SET email = :email, postcode = :postcode, lat = :lat, lon = :lon WHERE is_medewerker = 0 AND naam = :naam");
             echo $stmt->execute([':email' => $email, ':postcode' => $postcode, ':lat' => $lat, ':lon' => $lon, ':naam' => $naam])
                 ? "Email bijgewerkt voor chauffeur."
                 : "Fout bij bijwerken email.";
@@ -492,7 +546,7 @@ if (isset($_GET['action'])) {
         $data = json_decode(file_get_contents('php://input'), true);
         $naam = trim($data['chauffeur']);
         if ($naam !== "") {
-            $stmt = $pdo->prepare("DELETE FROM chauffeurs WHERE naam = :naam");
+            $stmt = $pdo->prepare("DELETE FROM chauffeurs WHERE is_medewerker = 0 AND naam = :naam");
             echo $stmt->execute([':naam' => $naam])
                 ? "Chauffeur verwijderd."
                 : "Fout bij verwijderen chauffeur.";
@@ -739,6 +793,18 @@ if (isset($_GET['action'])) {
     .stack-title {
       margin: 0 0 12px;
       color: #111827;
+    }
+
+    .gebruikerslijsten { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; margin-bottom: 24px; }
+    .medewerkers-kolom { border-left: 1px solid #cfd8e3; padding-left: 28px; }
+    #medewerkerList { margin: 0; padding-left: 20px; }
+    #medewerkerList li { margin-bottom: 10px; overflow-wrap: anywhere; }
+    #medewerkerList .medewerker-delete { background: none; border: 0; padding: 0; margin: 0 0 0 10px; color: #b91c1c; font: inherit; text-decoration: underline; cursor: pointer; }
+    #medewerkerList .medewerker-delete:hover { color: #7f1d1d; transform: none; }
+    #medewerkerList .medewerker-delete:disabled { opacity: 0.5; cursor: wait; }
+    @media (max-width: 700px) {
+      .gebruikerslijsten { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+      .medewerkers-kolom { border-left: 0; border-top: 1px solid #cfd8e3; padding: 20px 0 0; }
     }
 
     #chauffeurList {
@@ -1062,6 +1128,54 @@ if (isset($_GET['action'])) {
       z-index: 3000;
     }
 
+    #medewerker-dialog {
+      box-sizing: border-box;
+      width: min(560px, calc(100vw - 32px));
+      max-width: none;
+      max-height: calc(100dvh - 32px);
+      overflow-y: auto;
+      padding: 32px;
+      border: 1px solid #dbe3ed;
+      border-radius: 16px;
+      box-shadow: 0 24px 64px rgba(15, 23, 42, 0.24);
+      color: #1f2937;
+      background: #fff;
+    }
+
+    #medewerker-dialog::backdrop { background: rgba(15, 23, 42, 0.45); }
+    #medewerker-dialog h2 { margin: 0 0 12px; font-size: 1.5rem; }
+    #medewerker-dialog .medewerker-intro { margin: 0 0 28px; line-height: 1.6; color: #526174; }
+    #medewerker-dialog .medewerker-field { margin-bottom: 22px; }
+    #medewerker-dialog label { display: block; margin-bottom: 9px; font-size: 1rem; font-weight: 600; }
+    #medewerker-dialog input {
+      display: block;
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 52px;
+      padding: 14px 16px;
+      border: 1px solid #b8c5d5;
+      border-radius: 9px;
+      background: #fff;
+      color: #1f2937;
+      font: inherit;
+      font-size: 16px;
+      line-height: 1.4;
+    }
+    #medewerker-dialog input:focus { outline: 3px solid #dbeafe; outline-offset: 1px; border-color: #1769c2; }
+    #medewerker-dialog .medewerker-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+    #medewerker-dialog button { min-height: 46px; padding: 12px 20px; margin: 0; font-size: 0.95rem; }
+    #medewerker-dialog .medewerker-submit { background: #1769c2; color: #fff; }
+    #medewerker-dialog .medewerker-submit:hover { background: #12549c; }
+    #medewerker-dialog .medewerker-close { background: #eef2f6; color: #334155; }
+    #medewerker-dialog .medewerker-close:hover { background: #e2e8f0; }
+    #medewerker-dialog button:disabled { opacity: 0.6; cursor: wait; transform: none; }
+    #medewerker-result:empty { display: none; }
+    #medewerker-result { line-height: 1.5; margin: 16px 0 0; }
+    @media (max-width: 480px) {
+      #medewerker-dialog { padding: 24px; }
+      #medewerker-dialog .medewerker-actions button { flex: 1 1 100%; }
+    }
+
     .no-spinner::-webkit-inner-spin-button,
     .no-spinner::-webkit-outer-spin-button {
       -webkit-appearance: none;
@@ -1093,8 +1207,17 @@ if (isset($_GET['action'])) {
 
     <?php if ($fullAccess): ?>
     <section id="chauffeur-section" class="card">
+      <div class="gebruikerslijsten">
+      <div>
       <h2 class="stack-title">Chauffeurs</h2>
       <ul id="chauffeurList"></ul>
+      </div>
+      <div class="medewerkers-kolom">
+        <h2 class="stack-title">Medewerkers</h2>
+        <ul id="medewerkerList" aria-live="polite"></ul>
+      </div>
+      </div>
+      <?php if ($canAdmin): ?>
       <div class="form-grid">
         <input type="text" id="newChauffeur" placeholder="Naam">
         <input type="text" id="newChauffeurPostcode" placeholder="Postcode">
@@ -1103,12 +1226,35 @@ if (isset($_GET['action'])) {
         <input type="password" id="newChauffeurPassword" placeholder="Wachtwoord (8k/1getal/1leesteken)">
       </div>
       <button id="add-chauffeur-button" onclick="addChauffeur()">Voeg chauffeur toe</button>
-      <?php if ($fullAccess): ?>
+      <?php endif; ?>
+      <button id="add-medewerker-button" style="background-color: #1769c2; color: white;" onclick="document.getElementById('medewerker-dialog').showModal()">Voeg medewerker toe</button>
+      <?php if ($canAdmin): ?>
       <button id="rebuild-geo-button" onclick="rebuildAllGeocodes()">Herbereken lat/lon (ritten + chauffeurs)</button>
       <?php endif; ?>
     </section>
     <?php endif; ?>
 
+    <?php if ($fullAccess): ?>
+    <dialog id="medewerker-dialog" aria-labelledby="medewerker-title" aria-describedby="medewerker-intro">
+      <form id="medewerker-form">
+        <h2 id="medewerker-title">Voeg medewerker toe</h2>
+        <p id="medewerker-intro" class="medewerker-intro">De medewerker ontvangt direct een uitnodiging om een wachtwoord aan te maken en 2FA in te stellen, eventueel via e-mail.</p>
+        <div class="medewerker-field">
+        <label for="medewerker-naam">Naam</label>
+        <input id="medewerker-naam" name="naam" required maxlength="255" autocomplete="name" placeholder="Voor- en achternaam">
+        </div>
+        <div class="medewerker-field">
+        <label for="medewerker-email">E-mail</label>
+        <input id="medewerker-email" name="email" type="email" required maxlength="255" autocomplete="email" placeholder="naam@voorbeeld.nl">
+        </div>
+        <p id="medewerker-result" role="status"></p>
+        <div class="medewerker-actions">
+          <button class="medewerker-close" type="button" onclick="document.getElementById('medewerker-dialog').close()">Sluiten</button>
+          <button class="medewerker-submit" type="submit">Voeg medewerker toe</button>
+        </div>
+      </form>
+    </dialog>
+    <?php endif; ?>
     <section id="intro-text" class="card">
       <p><strong>Verklaring van regelkleuren:</strong></p>
       <span>Wit = Niet toegewezen aan een chauffeur<br></span>
@@ -1224,6 +1370,7 @@ if (isset($_GET['action'])) {
   </div>
   
   <script>
+    const canAdmin = <?php echo json_encode($canAdmin); ?>;
     const fullAccess = <?php echo json_encode($fullAccess); ?>;
     const username = <?php echo json_encode($username); ?>;
     const inactivityTimeout = 3600 * 1000;
@@ -1408,6 +1555,7 @@ if (isset($_GET['action'])) {
       loadEmailTemplate6();
       loadChauffeurs();
       loadRitten();
+      if (fullAccess) loadMedewerkers();
       
       document.getElementById("cancelRitBtn")?.addEventListener("click", function() {
         document.getElementById("confirmRitModal").style.display = "none";
@@ -1531,6 +1679,55 @@ if (isset($_GET['action'])) {
         });
     }
 
+    async function loadMedewerkers() {
+      const list = document.getElementById('medewerkerList');
+      if (!list) return;
+      try {
+        const response = await fetch(buildUrl('loadMedewerkers'));
+        const data = await response.json();
+        if (!response.ok || !Array.isArray(data)) throw new Error(data.message || 'Medewerkers laden is mislukt.');
+        list.replaceChildren();
+        if (data.length === 0) {
+          const empty = document.createElement('li');
+          empty.textContent = 'Nog geen medewerkers toegevoegd.';
+          list.appendChild(empty);
+        }
+        data.forEach(medewerker => {
+          const li = document.createElement('li');
+          const name = document.createElement('strong');
+          name.textContent = medewerker.naam;
+          li.append(name, document.createTextNode(' (' + medewerker.email + ')'));
+          if (Number(medewerker.id) !== <?php echo (int)($_SESSION['user_id'] ?? 0); ?>) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'medewerker-delete';
+            button.textContent = 'Verwijderen';
+            button.setAttribute('aria-label', medewerker.naam + ' verwijderen');
+            button.addEventListener('click', async () => {
+              if (!confirm('Wil je medewerker ' + medewerker.naam + ' verwijderen? Dit account heeft daarna geen toegang meer.')) return;
+              button.disabled = true;
+              try {
+                const response = await fetch(buildUrl('deleteMedewerker'), {
+                  method: 'POST', headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({id: medewerker.id, csrf: <?php echo json_encode($_SESSION['medewerker_csrf']); ?>})
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.message || 'Verwijderen is mislukt.');
+                await loadMedewerkers();
+              } catch (error) { alert(error.message); button.disabled = false; }
+            });
+            li.appendChild(button);
+          }
+          list.appendChild(li);
+        });
+      } catch (error) {
+        list.replaceChildren();
+        const item = document.createElement('li');
+        item.textContent = error.message;
+        list.appendChild(item);
+      }
+    }
+
     function loadChauffeurs() {
       fetchChauffeursData()
         .then(data => {
@@ -1649,7 +1846,7 @@ if (isset($_GET['action'])) {
             </div>
             <div class="button-container">
               <button class="action-btn" onclick="openRitConfirmationModal(this)">Bevestig rit</button>
-              ${ fullAccess ? '<button class="delete-button" onclick="deleteRow(this)">Verwijder rit</button>' : '' }
+              ${ canAdmin ? '<button class="delete-button" onclick="deleteRow(this)">Verwijder rit</button>' : '' }
             </div>
           </div>
         </td>
@@ -2259,6 +2456,26 @@ if (isset($_GET['action'])) {
       })
       .catch(err => { console.error("Fout bij verwijderen chauffeur:", err); });
     }
+    document.getElementById('medewerker-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector('[type="submit"]');
+      const result = document.getElementById('medewerker-result');
+      button.disabled = true;
+      result.textContent = 'Medewerker wordt aangemaakt...';
+      try {
+        const response = await fetch('addMedewerker.php', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({naam: form.elements.naam.value, email: form.elements.email.value,
+            csrf: <?php echo json_encode($_SESSION['medewerker_csrf']); ?>})
+        });
+        const data = await response.json();
+        result.textContent = data.message;
+        if (data.created) { form.reset(); loadMedewerkers(); }
+      } catch (error) {
+        result.textContent = 'Geen bevestiging ontvangen. Controleer of het account bestaat voordat je opnieuw probeert.';
+      } finally { button.disabled = false; }
+    });
     function addChauffeur() {
       const addButton = document.getElementById("add-chauffeur-button");
       const chauffeurName = document.getElementById("newChauffeur").value.trim();

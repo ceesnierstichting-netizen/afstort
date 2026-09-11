@@ -131,19 +131,28 @@ function refreshCurrentUserAccess(PDO $pdo) {
     $user = null;
 
     if (!empty($_SESSION['user_id'])) {
-        $stmt = $pdo->prepare("SELECT id, naam, email, fullAccess FROM chauffeurs WHERE id = ? LIMIT 1");
+        $stmt = $pdo->prepare("SELECT id, naam, email, fullAccess, is_medewerker FROM chauffeurs WHERE id = ? LIMIT 1");
         $stmt->execute([(int)$_SESSION['user_id']]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$user) {
+            // Een verwijderd account mag geen bestaande sessie blijven gebruiken.
+            $_SESSION = [];
+            session_regenerate_id(true);
+            http_response_code(401);
+            header('Content-Type: application/json');
+            echo json_encode(['message' => 'Je account bestaat niet meer. Log opnieuw in.']);
+            exit;
+        }
     }
 
     if (!$user && !empty($_SESSION['user_email'])) {
-        $stmt = $pdo->prepare("SELECT id, naam, email, fullAccess FROM chauffeurs WHERE email = ? LIMIT 1");
+        $stmt = $pdo->prepare("SELECT id, naam, email, fullAccess, is_medewerker FROM chauffeurs WHERE email = ? LIMIT 1");
         $stmt->execute([$_SESSION['user_email']]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
     if (!$user && !empty($_SESSION['username'])) {
-        $stmt = $pdo->prepare("SELECT id, naam, email, fullAccess FROM chauffeurs WHERE naam = ? LIMIT 1");
+        $stmt = $pdo->prepare("SELECT id, naam, email, fullAccess, is_medewerker FROM chauffeurs WHERE naam = ? LIMIT 1");
         $stmt->execute([$_SESSION['username']]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
     }
@@ -152,7 +161,8 @@ function refreshCurrentUserAccess(PDO $pdo) {
         $_SESSION['user_id'] = (int)$user['id'];
         $_SESSION['username'] = $user['naam'];
         $_SESSION['user_email'] = $user['email'];
-        $_SESSION['fullAccess'] = normalizeFullAccess($user['fullAccess']);
+        $_SESSION['is_medewerker'] = isMedewerker($user);
+        $_SESSION['fullAccess'] = hasDashboardAccess($user);
     }
 }
 
@@ -210,5 +220,8 @@ function geocodePostcode($postcode) {
 
     return [floatval($data[0]['lat']), floatval($data[0]['lon'])];
 }
+
+// Controleer ook actieve sessies bij losse API- en rapportverzoeken.
+refreshCurrentUserAccess($pdo);
 
 ?>

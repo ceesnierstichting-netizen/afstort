@@ -4,7 +4,7 @@ require_once('config.php');
 
 if (isset($_GET['naam'])) {
     $naam = $_GET['naam'];
-    $stmt = $pdo->prepare("SELECT email FROM chauffeurs WHERE naam = :naam LIMIT 1");
+    $stmt = $pdo->prepare("SELECT email FROM chauffeurs WHERE is_medewerker = 0 AND naam = :naam LIMIT 1");
     $stmt->execute([':naam' => $naam]);
     $result = $stmt->fetch(PDO::FETCH_ASSOC);
     if ($result) {

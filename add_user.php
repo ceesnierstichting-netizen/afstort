@@ -1,5 +1,11 @@
 <?php
+require_once('session.php');
 require_once('config.php');
+refreshCurrentUserAccess($pdo);
+if (empty($_SESSION['twofa_verified']) || !hasAdminPermissions($_SESSION)) {
+    http_response_code(403);
+    exit('Geen toegang.');
+}
 
 // Vul deze variabelen in
 $naam = 'Nieuwe Gebruiker';
