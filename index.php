@@ -87,7 +87,7 @@ function normalizeOptionalIban($ibanValue) {
 
 if (isset($_GET['action'])) {
     $action = $_GET['action'];
-    if (in_array($action, ['deleteRit', 'addChauffeur', 'rebuildAllGeocodes'], true) && !$canAdmin) {
+    if (in_array($action, ['deleteRit', 'addChauffeur', 'deleteChauffeur', 'deleteMedewerker', 'rebuildAllGeocodes'], true) && !$canAdmin) {
         http_response_code(403);
         header('Content-Type: application/json');
         echo json_encode(['status' => 'error', 'message' => 'Je hebt geen rechten voor deze actie.']);
@@ -1226,15 +1226,13 @@ if (isset($_GET['action'])) {
         <input type="password" id="newChauffeurPassword" placeholder="Wachtwoord (8k/1getal/1leesteken)">
       </div>
       <button id="add-chauffeur-button" onclick="addChauffeur()">Voeg chauffeur toe</button>
-      <?php endif; ?>
       <button id="add-medewerker-button" style="background-color: #1769c2; color: white;" onclick="document.getElementById('medewerker-dialog').showModal()">Voeg medewerker toe</button>
-      <?php if ($canAdmin): ?>
       <button id="rebuild-geo-button" onclick="rebuildAllGeocodes()">Herbereken lat/lon (ritten + chauffeurs)</button>
       <?php endif; ?>
     </section>
     <?php endif; ?>
 
-    <?php if ($fullAccess): ?>
+    <?php if ($canAdmin): ?>
     <dialog id="medewerker-dialog" aria-labelledby="medewerker-title" aria-describedby="medewerker-intro">
       <form id="medewerker-form">
         <h2 id="medewerker-title">Voeg medewerker toe</h2>
@@ -1697,7 +1695,7 @@ if (isset($_GET['action'])) {
           const name = document.createElement('strong');
           name.textContent = medewerker.naam;
           li.append(name, document.createTextNode(' (' + medewerker.email + ')'));
-          if (Number(medewerker.id) !== <?php echo (int)($_SESSION['user_id'] ?? 0); ?>) {
+          if (canAdmin && Number(medewerker.id) !== <?php echo (int)($_SESSION['user_id'] ?? 0); ?>) {
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'medewerker-delete';
@@ -1742,7 +1740,7 @@ if (isset($_GET['action'])) {
             const naamMetDetails = details
               ? '<strong>' + chauffeur.naam + ' (' + details + ')</strong>'
               : '<strong>' + chauffeur.naam + '</strong>';
-            if (chauffeur.naam === 'Admin') {
+            if (!canAdmin || chauffeur.naam === 'Admin') {
               li.innerHTML = naamMetDetails;
             } else {
               li.innerHTML = naamMetDetails + '<span style="color:red;cursor:pointer;" onclick="deleteChauffeur(\'' + chauffeur.naam + '\')"> Verwijder</span>';
@@ -2456,7 +2454,7 @@ if (isset($_GET['action'])) {
       })
       .catch(err => { console.error("Fout bij verwijderen chauffeur:", err); });
     }
-    document.getElementById('medewerker-form').addEventListener('submit', async event => {
+    document.getElementById('medewerker-form')?.addEventListener('submit', async event => {
       event.preventDefault();
       const form = event.currentTarget;
       const button = form.querySelector('[type="submit"]');
