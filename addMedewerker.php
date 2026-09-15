@@ -7,7 +7,7 @@ ini_set('display_errors', '0');
 
 header('Content-Type: application/json; charset=UTF-8');
 refreshCurrentUserAccess($pdo);
-if (empty($_SESSION['twofa_verified']) || !hasDashboardAccess($_SESSION)) {
+if (empty($_SESSION['twofa_verified']) || !hasAdminPermissions($_SESSION)) {
     http_response_code(403);
     echo json_encode(['message' => 'Geen toegang.']);
     exit;
