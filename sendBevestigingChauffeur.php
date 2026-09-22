@@ -32,7 +32,10 @@ $replacements = [
 ];
 $body = str_replace($placeholders, $replacements, $body);
 
-if(mail($to, $subject, $body, $headers)){
+$mailSent = mail($to, $subject, $body, $headers);
+logRitEmail($pdo, $data['ritId'] ?? 0, 'Ritbevestiging chauffeur', $to, $subject, $mailSent ? 'verzonden' : 'mislukt');
+
+if($mailSent){
     echo json_encode(["status" => "success"]);
 } else {
     echo json_encode(["status" => "error", "message" => "Mail kon niet worden verstuurd."]);

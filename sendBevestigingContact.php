@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/config.php';
+
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -35,7 +37,11 @@ $headers = "From: " . $from . "\r\n" .
            "Reply-To: " . $from . "\r\n" .
            "Content-Type: text/html; charset=UTF-8\r\n";
 
-if(mail($email, "Bevestiging afhaalopdracht", $body, $headers, "-f" . $from)){
+$subject = "Bevestiging afhaalopdracht";
+$mailSent = mail($email, $subject, $body, $headers, "-f" . $from);
+logRitEmail($pdo, $data['ritId'] ?? 0, 'Ritbevestiging contactpersoon', $email, $subject, $mailSent ? 'verzonden' : 'mislukt');
+
+if($mailSent){
     echo json_encode(['status' => 'success']);
 } else {
     echo json_encode(['status' => 'error', 'message' => 'E-mail verzenden mislukt']);

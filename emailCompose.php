@@ -140,6 +140,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Verstuur de e-mail
     $success = mail($aanEmail, $subject, $message, $headers);
+    $rapportOntvangers = $aanEmail;
+    if ($ccEmail !== '') $rapportOntvangers .= ', CC: ' . $ccEmail;
+    if ($bccEmail !== '') $rapportOntvangers .= ', BCC: ' . $bccEmail;
+    logRitEmail($pdo, $ritId, 'Afronding afstort', $rapportOntvangers, $subject, $success ? 'verzonden' : 'mislukt');
     if ($success) {
         echo "Email verzonden.";
     } else {
