@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/config.php';
+
 ob_start();
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
@@ -49,7 +51,18 @@ $headers = "From: " . $from . "\r\n" .
            "MIME-Version: 1.0\r\n" .
            "Content-Type: text/html; charset=UTF-8\r\n";
 
-if(mail($email, $subject, $body, $headers)){
+$mailSent = mail($email, $subject, $body, $headers);
+logRitEmail(
+    $pdo,
+    $data['ritId'] ?? 0,
+    $data['emailType'] ?? 'E-mail',
+    $email,
+    $subject,
+    $mailSent ? 'verzonden' : 'mislukt',
+    $mailSent ? null : 'De mailserver heeft het bericht niet geaccepteerd.'
+);
+
+if($mailSent){
     $response = ['status' => 'success'];
 } else {
     $response = ['status' => 'error', 'message' => 'E-mail verzenden mislukt'];

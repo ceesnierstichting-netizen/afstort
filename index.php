@@ -16,6 +16,7 @@ refreshCurrentUserAccess($pdo);
 
 $fullAccess = !empty($_SESSION['fullAccess']);
 $canAdmin = hasAdminPermissions($_SESSION);
+$canViewEmailRapport = canViewEmailRapport($_SESSION);
 $_SESSION['medewerker_csrf'] = $_SESSION['medewerker_csrf'] ?? bin2hex(random_bytes(32));
 $username   = $_SESSION['username'] ?? '';
 
@@ -96,8 +97,8 @@ if (isset($_GET['action'])) {
     
     if ($action === 'loadRitten') {
         header('Content-Type: application/json');
+        ensureRitAanbiedingenTable($pdo);
         if (!$fullAccess) {
-            ensureRitAanbiedingenTable($pdo);
             $stmt = $pdo->prepare("
                 SELECT *
                 FROM ritten
@@ -140,7 +141,16 @@ if (isset($_GET['action'])) {
                 }
             }
         } else {
-            $stmt = $pdo->prepare("SELECT * FROM ritten");
+            $stmt = $pdo->prepare("
+                SELECT ritten.*,
+                       EXISTS (
+                           SELECT 1
+                           FROM rit_aanbiedingen
+                           WHERE rit_aanbiedingen.rit_id = ritten.id
+                             AND rit_aanbiedingen.status = 'aangeboden'
+                       ) AS heeft_openstaande_aanbieding
+                FROM ritten
+            ");
             $stmt->execute();
             $ritten = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
@@ -405,11 +415,17 @@ if (isset($_GET['action'])) {
     } elseif ($action === 'loadChauffeurs') {
         header('Content-Type: application/json');
         if (!$fullAccess) {
-            $stmt = $pdo->prepare("SELECT naam, email, postcode FROM chauffeurs WHERE naam = :username");
+            $stmt = $pdo->prepare("SELECT naam, email, postcode, is_medewerker FROM chauffeurs WHERE naam = :username");
             $stmt->execute([':username' => $username]);
         } else {
-            $stmt = $pdo->prepare("SELECT naam, email, postcode FROM chauffeurs WHERE is_medewerker = 0 AND naam <> 'Admin' ORDER BY naam ASC");
-            $stmt->execute();
+            $stmt = $pdo->prepare("
+                SELECT naam, email, postcode, is_medewerker
+                FROM chauffeurs
+                WHERE (is_medewerker = 0 OR (is_medewerker = 1 AND LOWER(TRIM(naam)) = LOWER(:uitzondering)))
+                  AND naam <> 'Admin'
+                ORDER BY naam ASC
+            ");
+            $stmt->execute([':uitzondering' => SELECTABLE_MEDEWERKER_CHAUFFEUR]);
         }
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
         exit();
@@ -1305,6 +1321,9 @@ if (isset($_GET['action'])) {
 
     <div class="button-row">
       <button id="rapport-button" onclick="openRapport()">Rapport</button>
+      <?php if ($canViewEmailRapport): ?>
+      <button type="button" onclick="window.open('emailRapport.php', '_blank', 'noopener')">E-mailrapport</button>
+      <?php endif; ?>
     </div>
 
     <?php if ($fullAccess): ?>
@@ -1740,7 +1759,7 @@ if (isset($_GET['action'])) {
             const naamMetDetails = details
               ? '<strong>' + chauffeur.naam + ' (' + details + ')</strong>'
               : '<strong>' + chauffeur.naam + '</strong>';
-            if (!canAdmin || chauffeur.naam === 'Admin') {
+            if (!canAdmin || chauffeur.naam === 'Admin' || Number(chauffeur.is_medewerker) === 1) {
               li.innerHTML = naamMetDetails;
             } else {
               li.innerHTML = naamMetDetails + '<span style="color:red;cursor:pointer;" onclick="deleteChauffeur(\'' + chauffeur.naam + '\')"> Verwijder</span>';
@@ -1808,8 +1827,10 @@ if (isset($_GET['action'])) {
       const chauffeurValue = normalizeChauffeurValue(rit.chauffeur);
       tr.setAttribute("data-chauffeur", chauffeurValue);
       tr.setAttribute("data-dirty", "false");
-      tr.setAttribute("data-server-existing", rit.id ? "true" : "false");
-      tr.setAttribute("data-chauffeur-mail-sent", "false");
+      tr.setAttribute(
+        "data-chauffeur-mail-sent",
+        Number(rit.heeft_openstaande_aanbieding || 0) === 1 ? "true" : "false"
+      );
       tr.innerHTML = `
         <td>
           <input type="hidden" class="rowId" value="${rit.id ? rit.id : ''}">
@@ -1866,10 +1887,12 @@ if (isset($_GET['action'])) {
     // Direct versturen van de basisbevestigingsmail
     function ensureRowSaved(row) {
       const idField = row.querySelector(".rowId");
-      if (idField && idField.value) {
+      const isDirty = row.getAttribute("data-dirty") === "true";
+      if (idField && idField.value && !isDirty) {
         return Promise.resolve(idField.value);
       }
 
+      clearTimeout(saveTimer);
       return saveRitten().then(() => {
         const refreshedIdField = row.querySelector(".rowId");
         const ritId = refreshedIdField ? refreshedIdField.value : "";
@@ -1882,8 +1905,10 @@ if (isset($_GET['action'])) {
 
     function sendBasisemail(btn) {
       let row = btn.closest("tr");
-      const wasServerExisting = row.getAttribute("data-server-existing") === "true";
       const chauffeurMailSent = row.getAttribute("data-chauffeur-mail-sent") === "true";
+      const chauffeurSelect = row.querySelector("select[data-field='chauffeur']");
+      const chauffeurIsUnassigned = !chauffeurSelect
+        || normalizeChauffeurValue(chauffeurSelect.value) === "Chauffeur kiezen";
 
       // >>> VALIDATIE voor contactbevestiging <<<
       if (!validateContactConfirmationRow(row)) {
@@ -1937,7 +1962,9 @@ if (isset($_GET['action'])) {
               email: emailContact,
               subject: "Afhaalopdracht collecte-opbrengst",
               body: template,
-              van: "noreply@nierstichtingnederland.nl"
+              van: "noreply@nierstichtingnederland.nl",
+              ritId: ritId,
+              emailType: "Eerste bevestiging contactpersoon"
             })
           }).then(response => response.json())
           .then(result => ({ result, ritId }));
@@ -1946,9 +1973,13 @@ if (isset($_GET['action'])) {
           if(result.status !== "success") {
             showNotification("Fout bij versturen bevestiging naar contact: " + result.message, "error");
           } else {
-            showNotification("Bevestigingsmail verstuurd naar contactpersoon.", "success");
-            if (!wasServerExisting && !chauffeurMailSent) {
+            if (!chauffeurMailSent && chauffeurIsUnassigned) {
+              showNotification("Bevestigingsmail verstuurd naar contactpersoon. Chauffeurvoorstel wordt verstuurd.", "success", 7000);
               sendRitMailToChauffeurs(row, ritId, false);
+            } else if (chauffeurMailSent) {
+              showNotification("Bevestigingsmail verstuurd naar contactpersoon. Het bestaande chauffeurvoorstel blijft actief; er is geen tweede voorstel verstuurd.", "success", 7000);
+            } else {
+              showNotification("Bevestigingsmail verstuurd naar contactpersoon. De rit heeft al een gekozen chauffeur; er is geen nieuw voorstel verstuurd.", "success", 7000);
             }
           }
         })
@@ -1976,7 +2007,9 @@ if (isset($_GET['action'])) {
             email: "mailnaarcees@gmail.com",
             subject: "TEST • Nieuwe rit in Dashboard afhaalopdrachten",
             body: body,
-            van: "noreply@nierstichtingnederland.nl"
+            van: "noreply@nierstichtingnederland.nl",
+            ritId: ritId,
+            emailType: "Testbericht chauffeur"
           })
         })
         .then(r => r.json())
@@ -2028,7 +2061,7 @@ if (isset($_GET['action'])) {
           + "Je bent geselecteerd als <b>dichtstbijzijnde chauffeur</b> voor een afhaalopdracht."
           + "<br>Collectegebied: <b>" + cgFromServer + "</b>"
           + "<br>Postcode/plaats: <b>" + pcPlaatsFromServer + "</b>"
-          + "<br><br>Als je deze rit gaat uitvoeren, log dan in op het afstortportaal <a href='https://nierstichting.nl/afstort'>https://nierstichting.nl/afstort</a> om de rit op jouw naam te zetten. <br><br>Kun je deze rit <b>niet</b> uitvoeren? <br>Klik dan op onderstaande link, de rit wordt dan aan de volgende dichtst bij wonende chauffeur toegewezen.<br> "
+          + "<br><br>Als je deze rit gaat uitvoeren, log dan in op het afstortportaal <a href='https://nierstichtingnederland.nl/afstort'>https://nierstichtingnederland.nl/afstort</a> om de rit op jouw naam te zetten. <br><br>Kun je deze rit <b>niet</b> uitvoeren? <br>Klik dan op onderstaande link, de rit wordt dan aan de volgende dichtst bij wonende chauffeur toegewezen.<br> "
           + "<a href='" + declineLink + "'>Ik kan deze rit niet uitvoeren</a>."
           + "<br><br>Met vriendelijke groet,<br>Nierstichting collectieteam";
 
@@ -2039,7 +2072,9 @@ if (isset($_GET['action'])) {
             email: email,
             subject: "Afhaalopdracht collecte-opbrengst (chauffeur)",
             body: body,
-            van: "noreply@nierstichtingnederland.nl"
+            van: "noreply@nierstichtingnederland.nl",
+            ritId: ritId,
+            emailType: "Chauffeurvoorstel"
           })
         }).then(async mailResponse => {
           const mailResult = await mailResponse.json();
@@ -2398,7 +2433,8 @@ if (isset($_GET['action'])) {
           body: bodyContact,
           busbriefje_url: busBriefjeUrl,
           afhaalbevestiging_url: afhaalBevestigingUrl,
-          wijknaam: wijknaam
+          wijknaam: wijknaam,
+          ritId: ritId
         })
       })
       .then(response => response.json())
@@ -2421,7 +2457,8 @@ if (isset($_GET['action'])) {
           body: bodyChauffeur,
           busbriefje_url: busBriefjeUrl,
           afhaalbevestiging_url: afhaalBevestigingUrl,
-          wijknaam: wijknaam
+          wijknaam: wijknaam,
+          ritId: ritId
         })
       })
       .then(response => response.json())

@@ -184,7 +184,9 @@ $mailPayload = json_encode(array(
     'email'   => $newEmail,
     'subject' => 'Afhaalopdracht collecte-opbrengst (nieuwe chauffeur)',
     'body'    => $body,
-    'van'     => 'noreply@nierstichtingnederland.nl'
+    'van'     => 'noreply@nierstichtingnederland.nl',
+    'ritId'   => $ritId,
+    'emailType' => 'Chauffeurvoorstel na afwijzing'
 ));
 
 $optsMail = array(

@@ -39,6 +39,12 @@ foreach ([[$admin, true, true], [$medewerker, true, false], [$chauffeur, false, 
 }
 assertSameValue(false, hasAdminPermissions(['fullAccess' => 1, 'is_medewerker' => 1]), 'medewerker blijft beperkt bij fullAccess');
 assertSameValue(false, shouldUseMobileDriverView(hasDashboardAccess($medewerker)), 'medewerker krijgt geen chauffeursweergave');
+assertSameValue(true, isSelectableMedewerkerChauffeur('Cees'), 'Cees is kiesbaar als chauffeur');
+assertSameValue(true, isSelectableMedewerkerChauffeur(' cees '), 'chauffeursuitzondering negeert hoofdletters en spaties');
+assertSameValue(false, isSelectableMedewerkerChauffeur('Nicole'), 'andere medewerkers zijn niet kiesbaar als chauffeur');
+assertSameValue(true, canViewEmailRapport(['fullAccess' => 1]), 'full access ziet e-mailrapport');
+assertSameValue(true, canViewEmailRapport(['fullAccess' => 'ja']), 'genormaliseerde full access ziet e-mailrapport');
+assertSameValue(false, canViewEmailRapport(['fullAccess' => 0]), 'gebruiker zonder full access ziet e-mailrapport niet');
 
 session_destroy();
 fwrite(STDOUT, "Regression checks passed.\n");

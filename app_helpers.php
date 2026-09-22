@@ -1,5 +1,7 @@
 <?php
 
+const SELECTABLE_MEDEWERKER_CHAUFFEUR = 'Cees';
+
 function isMedewerker(array $user) {
     return !empty($user['is_medewerker']);
 }
@@ -12,10 +14,68 @@ function hasAdminPermissions(array $user) {
     return !isMedewerker($user) && normalizeFullAccess($user['fullAccess'] ?? false);
 }
 
+function isSelectableMedewerkerChauffeur($naam) {
+    return strcasecmp(trim((string)$naam), SELECTABLE_MEDEWERKER_CHAUFFEUR) === 0;
+}
+
+function canViewEmailRapport(array $user) {
+    return normalizeFullAccess($user['fullAccess'] ?? false);
+}
+
+function ensureRitEmailLogTable(PDO $pdo) {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS rit_email_log (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            rit_id INT NOT NULL,
+            soort VARCHAR(100) NOT NULL,
+            ontvanger VARCHAR(255) NOT NULL,
+            onderwerp VARCHAR(255) DEFAULT NULL,
+            status VARCHAR(20) NOT NULL,
+            melding VARCHAR(500) DEFAULT NULL,
+            verzonden_op DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_rit_email_log_rit (rit_id),
+            KEY idx_rit_email_log_datum (verzonden_op)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    $ensured = true;
+}
+
+function logRitEmail(PDO $pdo, $ritId, $soort, $ontvanger, $onderwerp, $status, $melding = null) {
+    $ritId = (int)$ritId;
+    if ($ritId <= 0) {
+        return;
+    }
+
+    try {
+        ensureRitEmailLogTable($pdo);
+        $stmt = $pdo->prepare("
+            INSERT INTO rit_email_log (rit_id, soort, ontvanger, onderwerp, status, melding)
+            VALUES (:rit_id, :soort, :ontvanger, :onderwerp, :status, :melding)
+        ");
+        $stmt->execute([
+            ':rit_id' => $ritId,
+            ':soort' => substr(trim((string)$soort), 0, 100),
+            ':ontvanger' => substr(trim((string)$ontvanger), 0, 255),
+            ':onderwerp' => substr(trim((string)$onderwerp), 0, 255),
+            ':status' => substr(trim((string)$status), 0, 20),
+            ':melding' => $melding !== null ? substr(trim((string)$melding), 0, 500) : null,
+        ]);
+    } catch (Throwable $e) {
+        // Een probleem met rapportage mag het verzenden van een e-mail niet blokkeren.
+        error_log('Rit-e-maillog kon niet worden opgeslagen: ' . $e->getMessage());
+    }
+}
+
 function assertNotMedewerkerRecipient(PDO $pdo, $naam, $email = '') {
-    $stmt = $pdo->prepare('SELECT COUNT(*) FROM chauffeurs WHERE is_medewerker = 1 AND (naam = ? OR email = ?)');
+    $stmt = $pdo->prepare('SELECT naam FROM chauffeurs WHERE is_medewerker = 1 AND (naam = ? OR email = ?) LIMIT 1');
     $stmt->execute([trim((string)$naam), trim((string)$email)]);
-    if ((int)$stmt->fetchColumn() > 0) {
+    $medewerkerNaam = $stmt->fetchColumn();
+    if ($medewerkerNaam !== false && !isSelectableMedewerkerChauffeur($medewerkerNaam)) {
         throw new RuntimeException('Een medewerker kan geen ritten aangeboden of toegewezen krijgen.');
     }
 }
