@@ -2061,7 +2061,7 @@ if (isset($_GET['action'])) {
           + "Je bent geselecteerd als <b>dichtstbijzijnde chauffeur</b> voor een afhaalopdracht."
           + "<br>Collectegebied: <b>" + cgFromServer + "</b>"
           + "<br>Postcode/plaats: <b>" + pcPlaatsFromServer + "</b>"
-          + "<br><br>Als je deze rit gaat uitvoeren, log dan in op het afstortportaal <a href='https://nierstichting.nl/afstort'>https://nierstichting.nl/afstort</a> om de rit op jouw naam te zetten. <br><br>Kun je deze rit <b>niet</b> uitvoeren? <br>Klik dan op onderstaande link, de rit wordt dan aan de volgende dichtst bij wonende chauffeur toegewezen.<br> "
+          + "<br><br>Als je deze rit gaat uitvoeren, log dan in op het afstortportaal <a href='https://nierstichtingnederland.nl/afstort'>https://nierstichtingnederland.nl/afstort</a> om de rit op jouw naam te zetten. <br><br>Kun je deze rit <b>niet</b> uitvoeren? <br>Klik dan op onderstaande link, de rit wordt dan aan de volgende dichtst bij wonende chauffeur toegewezen.<br> "
           + "<a href='" + declineLink + "'>Ik kan deze rit niet uitvoeren</a>."
           + "<br><br>Met vriendelijke groet,<br>Nierstichting collectieteam";
 
