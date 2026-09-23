@@ -175,6 +175,12 @@ foreach ($data as $i => $rit) {
         }
         $ids[$i] = $rit['id'];
     } else {
+        $validationError = validateNieuweRitGegevens($rit);
+        if ($validationError !== null) {
+            http_response_code(422);
+            echo json_encode(['status' => 'error', 'message' => $validationError]);
+            exit;
+        }
         $stmt = $pdo->prepare("INSERT INTO ritten (
             collectegebied, gebiedsnummer, wijknaam, contactpersoon, adres, postcodePlaats, lat, lon, telefoonnummer, email,
             voorkeurAfhaalmoment, verwachtBedrag, soort, chauffeur, afhaalmoment, afhaaltijd, gestort, status, gereden,

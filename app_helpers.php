@@ -100,6 +100,30 @@ function ensureRittenAuditColumns(PDO $pdo) {
     $ensured = true;
 }
 
+function validateNieuweRitGegevens(array $rit) {
+    $adres = trim((string)($rit['adres'] ?? ''));
+    if ($adres === '' || !preg_match('/\d/', $adres)) {
+        return 'Vul bij het adres ook een huisnummer in.';
+    }
+
+    $telefoon = preg_replace('/[\s().\/-]+/', '', trim((string)($rit['telefoonnummer'] ?? '')));
+    if (!preg_match('/^(?:0[1-9][0-9]{8}|(?:\+31|0031)[1-9][0-9]{8})$/', $telefoon)) {
+        return 'Vul een geldig Nederlands telefoonnummer in, bijvoorbeeld 06-12345678.';
+    }
+
+    $postcodePlaats = trim((string)($rit['postcodePlaats'] ?? ''));
+    if (!preg_match('/^[1-9][0-9]{3}\s*[A-Za-z]{2}\s*\S.{1,}$/u', $postcodePlaats)) {
+        return 'Vul een volledige postcode en plaats in, bijvoorbeeld 1234AB Plaats.';
+    }
+
+    $email = trim((string)($rit['email'] ?? ''));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return 'Vul een geldig e-mailadres van de contactpersoon in.';
+    }
+
+    return null;
+}
+
 function assertNotMedewerkerRecipient(PDO $pdo, $naam, $email = '') {
     $stmt = $pdo->prepare('SELECT naam FROM chauffeurs WHERE is_medewerker = 1 AND (naam = ? OR email = ?) LIMIT 1');
     $stmt->execute([trim((string)$naam), trim((string)$email)]);

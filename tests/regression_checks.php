@@ -46,5 +46,17 @@ assertSameValue(true, canViewEmailRapport(['fullAccess' => 1]), 'full access zie
 assertSameValue(true, canViewEmailRapport(['fullAccess' => 'ja']), 'genormaliseerde full access ziet e-mailrapport');
 assertSameValue(false, canViewEmailRapport(['fullAccess' => 0]), 'gebruiker zonder full access ziet e-mailrapport niet');
 
+$geldigeNieuweRit = [
+    'adres' => 'Dorpsstraat 12A',
+    'telefoonnummer' => '06-12345678',
+    'postcodePlaats' => '2241RXWassenaar',
+    'email' => 'contact@example.nl',
+];
+assertSameValue(null, validateNieuweRitGegevens($geldigeNieuweRit), 'geldige nieuwe rit');
+assertSameValue('Vul bij het adres ook een huisnummer in.', validateNieuweRitGegevens(array_merge($geldigeNieuweRit, ['adres' => 'Dorpsstraat'])), 'huisnummer verplicht');
+assertSameValue('Vul een geldig Nederlands telefoonnummer in, bijvoorbeeld 06-12345678.', validateNieuweRitGegevens(array_merge($geldigeNieuweRit, ['telefoonnummer' => '12345'])), 'telefoonnummer valideren');
+assertSameValue('Vul een volledige postcode en plaats in, bijvoorbeeld 1234AB Plaats.', validateNieuweRitGegevens(array_merge($geldigeNieuweRit, ['postcodePlaats' => '2241RX'])), 'postcode en plaats valideren');
+assertSameValue('Vul een geldig e-mailadres van de contactpersoon in.', validateNieuweRitGegevens(array_merge($geldigeNieuweRit, ['email' => 'geen-email'])), 'e-mailadres valideren');
+
 session_destroy();
 fwrite(STDOUT, "Regression checks passed.\n");

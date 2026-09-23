@@ -315,6 +315,10 @@ if (isset($_GET['action'])) {
 
                     $ids[$i] = $rit['id'];
                 } else {
+                    $validationError = validateNieuweRitGegevens($rit);
+                    if ($validationError !== null) {
+                        throw new RuntimeException($validationError);
+                    }
                     $stmt = $pdo->prepare("INSERT INTO ritten (
                         collectegebied, wijknaam, gebiedsnummer, contactpersoon, adres, postcodePlaats, lat, lon, telefoonnummer, email,
                         voorkeurAfhaalmoment, verwachtBedrag, soort, chauffeur, afhaalmoment, afhaaltijd, gestort, gereden, status,
@@ -1579,6 +1583,48 @@ if (isset($_GET['action'])) {
 
     function showIncompleteMsg(){ showNotification("Niet alle velden zijn ingevuld", "error"); }
 
+    function showNewRitValidationWarning(field, message) {
+      const result = document.getElementById("new-rit-result");
+      if (result) {
+        result.textContent = message;
+        result.classList.add("error");
+      }
+      field.setCustomValidity(message);
+      field.reportValidity();
+      field.focus();
+      return false;
+    }
+
+    function validateNewRitForm(form) {
+      const fieldsToClear = ["adres", "telefoonnummer", "postcodePlaats", "email"];
+      fieldsToClear.forEach(name => form.elements.namedItem(name)?.setCustomValidity(""));
+
+      if (!form.reportValidity()) return false;
+
+      const adres = form.elements.namedItem("adres");
+      if (!/\d/.test(adres.value)) {
+        return showNewRitValidationWarning(adres, "Vul bij het adres ook een huisnummer in.");
+      }
+
+      const telefoon = form.elements.namedItem("telefoonnummer");
+      const compactTelefoonnummer = telefoon.value.trim().replace(/[\s().\/-]+/g, "");
+      if (!/^(?:0[1-9][0-9]{8}|(?:\+31|0031)[1-9][0-9]{8})$/.test(compactTelefoonnummer)) {
+        return showNewRitValidationWarning(telefoon, "Vul een geldig Nederlands telefoonnummer in, bijvoorbeeld 06-12345678.");
+      }
+
+      const postcode = form.elements.namedItem("postcodePlaats");
+      if (!/^[1-9][0-9]{3}\s*[A-Za-z]{2}\s*\S.{1,}$/.test(postcode.value.trim())) {
+        return showNewRitValidationWarning(postcode, "Vul een volledige postcode en plaats in, bijvoorbeeld 1234AB Plaats.");
+      }
+
+      const email = form.elements.namedItem("email");
+      if (!email.validity.valid || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) {
+        return showNewRitValidationWarning(email, "Vul een geldig e-mailadres van de contactpersoon in.");
+      }
+
+      return true;
+    }
+
     function normalizeChauffeurValue(value) {
       const v = (value || "").trim();
       if (!v || v === "-- Kies een chauffeur --" || v === "Kies een chauffeur") {
@@ -2809,7 +2855,7 @@ if (isset($_GET['action'])) {
     document.getElementById("new-rit-form")?.addEventListener("submit", async event => {
       event.preventDefault();
       const form = event.currentTarget;
-      if (!form.reportValidity()) return;
+      if (!validateNewRitForm(form)) return;
 
       const submitButton = form.querySelector('[type="submit"]');
       const result = document.getElementById("new-rit-result");
