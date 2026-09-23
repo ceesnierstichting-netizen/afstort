@@ -6,6 +6,7 @@ require_once('session.php');
 require_once('config.php');
 
 refreshCurrentUserAccess($pdo);
+ensureRittenAuditColumns($pdo);
 
 // Zorg dat de gebruiker via 2FA is ingelogd
 if (!isset($_SESSION['fullAccess']) || empty($_SESSION['twofa_verified'])) {
@@ -176,10 +177,12 @@ foreach ($data as $i => $rit) {
     } else {
         $stmt = $pdo->prepare("INSERT INTO ritten (
             collectegebied, gebiedsnummer, wijknaam, contactpersoon, adres, postcodePlaats, lat, lon, telefoonnummer, email,
-            voorkeurAfhaalmoment, verwachtBedrag, soort, chauffeur, afhaalmoment, afhaaltijd, gestort, status, gereden
+            voorkeurAfhaalmoment, verwachtBedrag, soort, chauffeur, afhaalmoment, afhaaltijd, gestort, status, gereden,
+            aangemaakt_door, aangemaakt_door_email
             ) VALUES (
             :collectegebied, :gebiedsnummer, :wijknaam, :contactpersoon, :adres, :postcodePlaats, :lat, :lon, :telefoonnummer, :email,
-            :voorkeurAfhaalmoment, :verwachtBedrag, :soort, :chauffeur, :afhaalmoment, :afhaaltijd, :gestort, :status, :gereden
+            :voorkeurAfhaalmoment, :verwachtBedrag, :soort, :chauffeur, :afhaalmoment, :afhaaltijd, :gestort, :status, :gereden,
+            :aangemaakt_door, :aangemaakt_door_email
             )");
         $result = $stmt->execute([
             ':collectegebied'       => $rit['collectegebied'],
@@ -200,7 +203,9 @@ foreach ($data as $i => $rit) {
             ':afhaaltijd'           => $rit['afhaaltijd'],
             ':gestort'              => isset($rit['gestort']) ? $rit['gestort'] : "",
             ':status'               => $rit['status'],
-            ':gereden'              => $gereden
+            ':gereden'              => $gereden,
+            ':aangemaakt_door'      => $_SESSION['username'] ?? null,
+            ':aangemaakt_door_email'=> $_SESSION['user_email'] ?? null
         ]);
         if (!$result) {
             error_log("Insert Error: " . print_r($stmt->errorInfo(), true));
