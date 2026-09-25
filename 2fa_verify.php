@@ -2,6 +2,7 @@
 require_once('session.php');
 require_once('config.php');
 require_once('twofa.php');
+require_once('auth_rate_limit.php');
 
 $user = twofa_get_pending_user($pdo);
 if (!$user) {
@@ -62,7 +63,10 @@ if (isset($_GET['send']) && $_GET['send'] === 'mail') {
     }
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !authRateAllowed($pdo, '2fa', $user['id'])) {
+    http_response_code(429);
+    $error = 'Te veel mislukte pogingen. Probeer het over 15 minuten opnieuw.';
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $requestedMode = ($_POST['method'] ?? $mode) === 'mail' ? 'mail' : 'authenticator';
     $mode = (!$hasAuthenticator || $requestedMode === 'mail') ? 'mail' : 'authenticator';
     $code = trim($_POST['twofa_code'] ?? $_POST['code'] ?? '');
@@ -74,6 +78,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($mode === 'mail') {
         $emailCodeChecked = true;
         if (twofa_verify_email_code($code, $emailMessage)) {
+            authRateSuccess($pdo, '2fa', $user['id']);
+            twofa_confirm_email_setup($pdo, $user);
             twofa_finish_login($user);
             header("Location: index.php");
             exit();
@@ -86,6 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $stmt = $pdo->prepare("UPDATE chauffeurs SET twofa_last_used_step = ? WHERE id = ?");
             $stmt->execute([$matchedStep, (int)$user['id']]);
+            authRateSuccess($pdo, '2fa', $user['id']);
             twofa_finish_login($user);
             header("Location: index.php");
             exit();
@@ -95,6 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (twofa_verify_recovery_code($code, $user['twofa_recovery_codes'] ?? null, $updatedRecoveryCodes)) {
             $stmt = $pdo->prepare("UPDATE chauffeurs SET twofa_recovery_codes = ? WHERE id = ?");
             $stmt->execute([$updatedRecoveryCodes, (int)$user['id']]);
+            authRateSuccess($pdo, '2fa', $user['id']);
             twofa_finish_login($user);
             header("Location: index.php");
             exit();
@@ -103,6 +111,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$emailCodeChecked && preg_match('/^\D*\d\D*\d\D*\d\D*\d\D*\d\D*\d\D*$/', $code)) {
             $emailCodeChecked = true;
             if (twofa_verify_email_code($code, $emailMessage)) {
+                authRateSuccess($pdo, '2fa', $user['id']);
+                twofa_confirm_email_setup($pdo, $user);
                 twofa_finish_login($user);
                 header("Location: index.php");
                 exit();
@@ -115,6 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ? "De controlecode klopt niet. Je kunt ook een herstelcode gebruiken."
                 : "De controlecode klopt niet.");
     }
+    authRateFailure($pdo, '2fa', $user['id']);
 }
 ?>
 <!DOCTYPE html>
@@ -319,7 +330,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </p>
             <p class="fallback">
                 Wil je later toch liever een authenticator-app gebruiken?
-                <a href="2fa_setup.php">Stel die dan hier in</a>.
+                <a href="2fa_setup.php?authenticator=1">Stel die dan hier in</a>.
             </p>
         <?php endif; ?>
 

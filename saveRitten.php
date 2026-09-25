@@ -1,12 +1,11 @@
 <?php
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
 require_once('session.php');
 require_once('config.php');
 
 refreshCurrentUserAccess($pdo);
-ensureRittenAuditColumns($pdo);
 
 // Zorg dat de gebruiker via 2FA is ingelogd
 if (!isset($_SESSION['fullAccess']) || empty($_SESSION['twofa_verified'])) {
@@ -14,6 +13,8 @@ if (!isset($_SESSION['fullAccess']) || empty($_SESSION['twofa_verified'])) {
     echo json_encode(["status" => "error", "message" => "Niet ingelogd."]);
     exit();
 }
+afstort_require_csrf();
+ensureRittenAuditColumns($pdo);
 
 header('Content-Type: application/json');
 
@@ -68,7 +69,7 @@ foreach ($data as $i => $rit) {
     $postcodePlaats = trim($rit['postcodePlaats'] ?? '');
     // Reken het aantal gereden kilometers af
     $gereden = isset($rit['gereden']) && $rit['gereden'] !== "" ? intval(round($rit['gereden'])) : 0;
-    list($lat, $lon) = resolveCoordinatesForSavedRit($postcodePlaats);
+    list($lat, $lon) = !empty($_SESSION['fullAccess']) ? resolveCoordinatesForSavedRit($postcodePlaats) : [null, null];
     
     // Als er een ID is, gaat het om een update; anders een insert.
     if (isset($rit['id']) && !empty($rit['id'])) {
@@ -89,6 +90,12 @@ foreach ($data as $i => $rit) {
             $isNewForUser = strcasecmp($newChauffeur, $username) === 0;
             $isOfferedToUser = heeftChauffeurOpenstaandeAanbieding($pdo, (int)$rit['id'], $username);
 
+            if (!$isNewForUser) {
+                http_response_code(403);
+                echo json_encode(['status' => 'error', 'message' => 'Je kunt deze rit alleen op je eigen naam zetten.']);
+                exit;
+            }
+
             if (!$isExistingForUser && !$isExistingUnassigned) {
                 http_response_code(403);
                 echo json_encode(["status" => "error", "message" => "Deze rit is al aan een andere chauffeur toegewezen."]);
@@ -101,11 +108,14 @@ foreach ($data as $i => $rit) {
                 exit;
             }
 
-            if (!$isNewForUser && !$isExistingForUser && !isUnassignedChauffeurValue($newChauffeur)) {
-                http_response_code(403);
-                echo json_encode(["status" => "error", "message" => "Je kunt deze rit niet aan een andere chauffeur toewijzen."]);
-                exit;
-            }
+            $stmt = $pdo->prepare('UPDATE ritten SET chauffeur = :chauffeur, status = :status WHERE id = :id');
+            $stmt->execute([
+                ':chauffeur' => $newChauffeur,
+                ':status' => ($rit['status'] ?? '') === 'Afgehandeld' && $isExistingForUser ? 'Afgehandeld' : '-',
+                ':id' => $rit['id'],
+            ]);
+            $ids[$i] = $rit['id'];
+            continue;
         }
 
         if ($lat === null && $lon === null) {
@@ -175,6 +185,11 @@ foreach ($data as $i => $rit) {
         }
         $ids[$i] = $rit['id'];
     } else {
+        if (empty($_SESSION['fullAccess'])) {
+            http_response_code(403);
+            echo json_encode(['status' => 'error', 'message' => 'Je kunt geen ritten aanmaken.']);
+            exit;
+        }
         $validationError = validateNieuweRitGegevens($rit);
         if ($validationError !== null) {
             http_response_code(422);

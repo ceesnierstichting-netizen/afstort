@@ -28,6 +28,9 @@ assertSameValue(false, isMobileUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x
 $admin = ['id' => 1, 'naam' => 'Admin', 'email' => 'admin@example.test', 'fullAccess' => 1, 'is_medewerker' => 0];
 $medewerker = ['id' => 2, 'naam' => 'Medewerker', 'email' => 'medewerker@example.test', 'fullAccess' => 0, 'is_medewerker' => 1];
 $chauffeur = ['id' => 3, 'naam' => 'Chauffeur', 'email' => 'chauffeur@example.test', 'fullAccess' => 0, 'is_medewerker' => 0];
+assertSameValue(false, twofa_has_completed_setup($medewerker), 'nieuw account begint met 2FA-instelling');
+assertSameValue(true, twofa_has_completed_setup($medewerker + ['twofa_confirmed_at' => '2026-09-24 12:00:00']), 'e-mailverificatie rondt instelling af');
+assertSameValue(true, twofa_has_completed_setup($chauffeur + ['twofa_enabled' => 1, 'twofa_secret' => 'SECRET']), 'authenticator rondt instelling af');
 foreach ([[$admin, true, true], [$medewerker, true, false], [$chauffeur, false, false]] as [$user, $dashboard, $adminRights]) {
     assertSameValue($dashboard, hasDashboardAccess($user), $user['naam'] . ' dashboard');
     assertSameValue($adminRights, hasAdminPermissions($user), $user['naam'] . ' beheerdersacties');

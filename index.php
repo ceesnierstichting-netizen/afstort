@@ -4,7 +4,7 @@
 require_once('session.php');
 require_once('config.php');
 
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
 if (!isset($_SESSION['username']) || empty($_SESSION['twofa_verified'])) {
@@ -88,11 +88,14 @@ function normalizeOptionalIban($ibanValue) {
 
 if (isset($_GET['action'])) {
     $action = $_GET['action'];
-    if (in_array($action, ['deleteRit', 'addChauffeur', 'deleteChauffeur', 'deleteMedewerker', 'rebuildAllGeocodes'], true) && !$canAdmin) {
+    if (in_array($action, ['deleteRit', 'addChauffeur', 'deleteChauffeur', 'deleteMedewerker', 'rebuildAllGeocodes', 'saveEmailTemplate', 'saveEmailTemplate3', 'saveEmailTemplate4', 'saveEmailTemplate5', 'saveEmailTemplate6'], true) && !$canAdmin) {
         http_response_code(403);
         header('Content-Type: application/json');
         echo json_encode(['status' => 'error', 'message' => 'Je hebt geen rechten voor deze actie.']);
         exit;
+    }
+    if (in_array($action, ['saveRitten', 'deleteRit', 'addChauffeur', 'updateChauffeur', 'deleteChauffeur', 'deleteMedewerker', 'rebuildAllGeocodes', 'saveEmailTemplate', 'saveEmailTemplate3', 'saveEmailTemplate4', 'saveEmailTemplate5', 'saveEmailTemplate6'], true)) {
+        afstort_require_csrf();
     }
     
     if ($action === 'loadRitten') {
@@ -216,7 +219,7 @@ if (isset($_GET['action'])) {
                     continue;
                 }
 
-                list($lat, $lon) = resolveCoordinatesFromPostcodeInput($postcodePlaats);
+                list($lat, $lon) = $fullAccess ? resolveCoordinatesFromPostcodeInput($postcodePlaats) : [null, null];
 
                 if (isset($rit['id']) && !empty($rit['id'])) {
                     if (!$isDirty) {
@@ -234,6 +237,10 @@ if (isset($_GET['action'])) {
                         $isExistingUnassigned = isUnassignedChauffeurValue($existingChauffeur);
                         $isOfferedToUser = heeftChauffeurOpenstaandeAanbieding($pdo, (int)$rit['id'], $username);
 
+                        if (!$isNewForUser) {
+                            throw new RuntimeException('Je kunt deze rit alleen op je eigen naam zetten.');
+                        }
+
                         if (!$isExistingForUser && !$isExistingUnassigned) {
                             throw new RuntimeException('Deze rit is al aan een andere chauffeur toegewezen.');
                         }
@@ -242,9 +249,14 @@ if (isset($_GET['action'])) {
                             throw new RuntimeException('Deze rit is nog niet vrij beschikbaar om te kiezen.');
                         }
 
-                        if (!$isNewForUser && !$isExistingForUser && !isUnassignedChauffeurValue($chauffeur)) {
-                            throw new RuntimeException('Je kunt deze rit niet aan een andere chauffeur toewijzen.');
-                        }
+                        $stmt = $pdo->prepare('UPDATE ritten SET chauffeur = :chauffeur, status = :status WHERE id = :id');
+                        $stmt->execute([
+                            ':chauffeur' => $chauffeur,
+                            ':status' => $status === 'Afgehandeld' && $isExistingForUser ? 'Afgehandeld' : '-',
+                            ':id' => $rit['id'],
+                        ]);
+                        $ids[$i] = $rit['id'];
+                        continue;
                     }
 
                     $stmtLoadRitGeo->execute([':id' => $rit['id']]);
@@ -315,6 +327,9 @@ if (isset($_GET['action'])) {
 
                     $ids[$i] = $rit['id'];
                 } else {
+                    if (!$fullAccess) {
+                        throw new RuntimeException('Je kunt geen ritten aanmaken.');
+                    }
                     $validationError = validateNieuweRitGegevens($rit);
                     if ($validationError !== null) {
                         throw new RuntimeException($validationError);
@@ -357,10 +372,14 @@ if (isset($_GET['action'])) {
 
             echo json_encode(['status' => 'ok', 'ids' => $ids, 'alerts' => $alerts]);
         } catch (Throwable $e) {
-            http_response_code(500);
+            $isValidationError = $e instanceof RuntimeException;
+            http_response_code($isValidationError ? 422 : 500);
+            if (!$isValidationError) {
+                error_log('Rit opslaan mislukt: ' . $e->getMessage());
+            }
             echo json_encode([
                 'status' => 'error',
-                'message' => $e->getMessage()
+                'message' => $isValidationError ? $e->getMessage() : 'Rit opslaan is mislukt.'
             ]);
         }
         exit();
@@ -825,9 +844,9 @@ if (isset($_GET['action'])) {
     .medewerkers-kolom { border-left: 1px solid #cfd8e3; padding-left: 28px; }
     #medewerkerList { margin: 0; padding-left: 20px; }
     #medewerkerList li { margin-bottom: 10px; overflow-wrap: anywhere; }
-    #medewerkerList .medewerker-delete { background: none; border: 0; padding: 0; margin: 0 0 0 10px; color: #b91c1c; font: inherit; text-decoration: underline; cursor: pointer; }
-    #medewerkerList .medewerker-delete:hover { color: #7f1d1d; transform: none; }
-    #medewerkerList .medewerker-delete:disabled { opacity: 0.5; cursor: wait; }
+    #chauffeurList .list-delete, #medewerkerList .list-delete { background: none; border: 0; padding: 0; margin: 0 0 0 10px; color: #b91c1c; font: inherit; text-decoration: underline; cursor: pointer; }
+    #chauffeurList .list-delete:hover, #medewerkerList .list-delete:hover { color: #7f1d1d; transform: none; }
+    #chauffeurList .list-delete:disabled, #medewerkerList .list-delete:disabled { opacity: 0.5; cursor: wait; }
     @media (max-width: 700px) {
       .gebruikerslijsten { grid-template-columns: minmax(0, 1fr); gap: 20px; }
       .medewerkers-kolom { border-left: 0; border-top: 1px solid #cfd8e3; padding: 20px 0 0; }
@@ -1299,7 +1318,7 @@ if (isset($_GET['action'])) {
       <div class="brand">
         <img src="logohome.png" alt="Logo">
       </div>
-      <div class="logout"><a href="logout.php">Uitloggen</a></div>
+      <div class="logout"><a href="2fa_setup.php?authenticator=1">Authenticator-app opnieuw koppelen</a> &nbsp; <a href="logout.php">Uitloggen</a></div>
     </div>
 
     <div id="notification"></div>
@@ -1543,6 +1562,19 @@ if (isset($_GET['action'])) {
   </div>
   
   <script>
+    const csrfToken = <?php echo json_encode(afstort_csrf_token()); ?>;
+    function apiFetch(url, options = {}) {
+      const headers = new Headers(options.headers || {});
+      if ((options.method || 'GET').toUpperCase() !== 'GET') {
+        headers.set('X-CSRF-Token', csrfToken);
+      }
+      return window.fetch(url, { ...options, headers });
+    }
+    function escapeHtmlAttribute(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[char]);
+    }
     const canAdmin = <?php echo json_encode($canAdmin); ?>;
     const fullAccess = <?php echo json_encode($fullAccess); ?>;
     const username = <?php echo json_encode($username); ?>;
@@ -1790,7 +1822,7 @@ if (isset($_GET['action'])) {
     }
     
     function loadEmailTemplate() {
-      fetch(buildUrl("loadEmailTemplate"))
+      apiFetch(buildUrl("loadEmailTemplate"))
         .then(response => response.json())
         .then(data => {
           document.getElementById("emailTemplate").value = (data && data.email_template && data.email_template.trim() !== "") ? data.email_template : "";
@@ -1802,7 +1834,7 @@ if (isset($_GET['action'])) {
     }
     
     function loadEmailTemplate3() {
-      fetch(buildUrl("loadEmailTemplate3"))
+      apiFetch(buildUrl("loadEmailTemplate3"))
         .then(response => response.json())
         .then(data => {
           const templateValue = (data && data.email_template && data.email_template.trim() !== "") ? data.email_template : "";
@@ -1823,7 +1855,7 @@ if (isset($_GET['action'])) {
     }
     
     function loadEmailTemplate4() {
-      fetch(buildUrl("loadEmailTemplate4"))
+      apiFetch(buildUrl("loadEmailTemplate4"))
         .then(response => response.json())
         .then(data => {
           const templateValue = (data && data.email_template && data.email_template.trim() !== "") ? data.email_template : "";
@@ -1844,7 +1876,7 @@ if (isset($_GET['action'])) {
     }
     
     function loadEmailTemplate5() {
-      fetch(buildUrl("loadEmailTemplate5"))
+      apiFetch(buildUrl("loadEmailTemplate5"))
         .then(response => response.json())
         .then(data => {
           if(document.getElementById("emailTemplate5"))
@@ -1858,7 +1890,7 @@ if (isset($_GET['action'])) {
     }
     
     function loadEmailTemplate6() {
-      fetch(buildUrl("loadEmailTemplate6"))
+      apiFetch(buildUrl("loadEmailTemplate6"))
         .then(response => response.json())
         .then(data => {
           if(document.getElementById("emailTemplate6"))
@@ -1872,7 +1904,7 @@ if (isset($_GET['action'])) {
     }
     
     function fetchChauffeursData() {
-      return fetch(buildUrl("loadChauffeurs"))
+      return apiFetch(buildUrl("loadChauffeurs"))
         .then(async response => {
           const text = await response.text();
           let payload = [];
@@ -1899,7 +1931,7 @@ if (isset($_GET['action'])) {
       const list = document.getElementById('medewerkerList');
       if (!list) return;
       try {
-        const response = await fetch(buildUrl('loadMedewerkers'));
+        const response = await apiFetch(buildUrl('loadMedewerkers'));
         const data = await response.json();
         if (!response.ok || !Array.isArray(data)) throw new Error(data.message || 'Medewerkers laden is mislukt.');
         list.replaceChildren();
@@ -1916,14 +1948,14 @@ if (isset($_GET['action'])) {
           if (canAdmin && Number(medewerker.id) !== <?php echo (int)($_SESSION['user_id'] ?? 0); ?>) {
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'medewerker-delete';
+            button.className = 'list-delete';
             button.textContent = 'Verwijderen';
             button.setAttribute('aria-label', medewerker.naam + ' verwijderen');
             button.addEventListener('click', async () => {
               if (!confirm('Wil je medewerker ' + medewerker.naam + ' verwijderen? Dit account heeft daarna geen toegang meer.')) return;
               button.disabled = true;
               try {
-                const response = await fetch(buildUrl('deleteMedewerker'), {
+                const response = await apiFetch(buildUrl('deleteMedewerker'), {
                   method: 'POST', headers: {'Content-Type': 'application/json'},
                   body: JSON.stringify({id: medewerker.id, csrf: <?php echo json_encode($_SESSION['medewerker_csrf']); ?>})
                 });
@@ -1955,13 +1987,16 @@ if (isset($_GET['action'])) {
             const postcode = (chauffeur.postcode || "").trim();
             const email = (chauffeur.email || "").trim();
             const details = [postcode, email].filter(Boolean).join(' | ');
-            const naamMetDetails = details
-              ? '<strong>' + chauffeur.naam + ' (' + details + ')</strong>'
-              : '<strong>' + chauffeur.naam + '</strong>';
-            if (!canAdmin || chauffeur.naam === 'Admin' || Number(chauffeur.is_medewerker) === 1) {
-              li.innerHTML = naamMetDetails;
-            } else {
-              li.innerHTML = naamMetDetails + '<span style="color:red;cursor:pointer;" onclick="deleteChauffeur(\'' + chauffeur.naam + '\')"> Verwijder</span>';
+            const label = document.createElement('strong');
+            label.textContent = details ? chauffeur.naam + ' (' + details + ')' : chauffeur.naam;
+            li.appendChild(label);
+            if (canAdmin && chauffeur.naam !== 'Admin' && Number(chauffeur.is_medewerker) !== 1) {
+              const remove = document.createElement('button');
+              remove.type = 'button';
+              remove.className = 'list-delete';
+              remove.textContent = 'Verwijder';
+              remove.addEventListener('click', () => deleteChauffeur(chauffeur.naam));
+              li.appendChild(remove);
             }
             chauffeurList.appendChild(li);
           });
@@ -2004,7 +2039,7 @@ if (isset($_GET['action'])) {
     }
     
     function loadRitten() {
-      fetch(buildUrl("loadRitten"))
+      apiFetch(buildUrl("loadRitten"))
         .then(response => response.json())
         .then(data => {
           const tableBody = document.getElementById("tableBody");
@@ -2032,22 +2067,22 @@ if (isset($_GET['action'])) {
       );
       tr.innerHTML = `
         <td>
-          <input type="hidden" class="rowId" value="${rit.id ? rit.id : ''}">
+          <input type="hidden" class="rowId" value="${escapeHtmlAttribute(rit.id)}">
           <div style="display: flex;">
-            <input type="text" placeholder="Collectegebied" value="${rit.collectegebied || ''}" ${ fullAccess ? '' : 'disabled'} data-field="collectegebied" style="flex:0.85 1 auto;">
-            <input type="text" placeholder="0001234" value="${rit.gebiedsnummer || ''}" ${ fullAccess ? '' : 'disabled'} data-field="gebiedsnummer" maxlength="8" style="width: 8.6ch; margin-left:2px; text-align:right;">
+            <input type="text" placeholder="Collectegebied" value="${escapeHtmlAttribute(rit.collectegebied)}" ${ fullAccess ? '' : 'disabled'} data-field="collectegebied" style="flex:0.85 1 auto;">
+            <input type="text" placeholder="0001234" value="${escapeHtmlAttribute(rit.gebiedsnummer)}" ${ fullAccess ? '' : 'disabled'} data-field="gebiedsnummer" maxlength="8" style="width: 8.6ch; margin-left:2px; text-align:right;">
           </div>
-          <input type="text" placeholder="Wijknaam (n.v.t. bij heel gebied)" value="${rit.wijknaam || ''}" ${ fullAccess ? '' : 'disabled'} data-field="wijknaam">
+          <input type="text" placeholder="Wijknaam (n.v.t. bij heel gebied)" value="${escapeHtmlAttribute(rit.wijknaam)}" ${ fullAccess ? '' : 'disabled'} data-field="wijknaam">
           <br>
-          <input type="text" placeholder="Contactpersoon" value="${rit.contactpersoon || ''}" ${ fullAccess ? '' : 'disabled'} data-field="contactpersoon"><br>
-          <input type="text" placeholder="Adres" value="${rit.adres || ''}" ${ fullAccess ? '' : 'disabled'} data-field="adres"><br>
-          <input type="text" placeholder="Postcode/Plaats" value="${rit.postcodePlaats || ''}" ${ fullAccess ? '' : 'disabled'} data-field="postcodePlaats"><br>
-          <input type="text" placeholder="Telefoonnummer" value="${rit.telefoonnummer || ''}" ${ fullAccess ? '' : 'disabled'} data-field="telefoonnummer"><br>
-          <input type="email" class="email-short" placeholder="E-mail" value="${rit.email || ''}" ${ fullAccess ? '' : 'disabled'} data-field="email">
+          <input type="text" placeholder="Contactpersoon" value="${escapeHtmlAttribute(rit.contactpersoon)}" ${ fullAccess ? '' : 'disabled'} data-field="contactpersoon"><br>
+          <input type="text" placeholder="Adres" value="${escapeHtmlAttribute(rit.adres)}" ${ fullAccess ? '' : 'disabled'} data-field="adres"><br>
+          <input type="text" placeholder="Postcode/Plaats" value="${escapeHtmlAttribute(rit.postcodePlaats)}" ${ fullAccess ? '' : 'disabled'} data-field="postcodePlaats"><br>
+          <input type="text" placeholder="Telefoonnummer" value="${escapeHtmlAttribute(rit.telefoonnummer)}" ${ fullAccess ? '' : 'disabled'} data-field="telefoonnummer"><br>
+          <input type="email" class="email-short" placeholder="E-mail" value="${escapeHtmlAttribute(rit.email)}" ${ fullAccess ? '' : 'disabled'} data-field="email">
           ${ fullAccess ? '<button class="send-email-test-btn" onclick="sendBasisemailTest(this)" aria-label="Test bevestigingsmail"></button>' : '' }
         </td>
-        <td><input type="date" value="${rit.voorkeurAfhaalmoment || ''}" ${ fullAccess ? '' : 'disabled'} data-field="voorkeurAfhaalmoment"></td>
-        <td><input type="number" value="${rit.verwachtBedrag || ''}" ${ fullAccess ? '' : 'disabled'} data-field="verwachtBedrag"></td>
+        <td><input type="date" value="${escapeHtmlAttribute(rit.voorkeurAfhaalmoment)}" ${ fullAccess ? '' : 'disabled'} data-field="voorkeurAfhaalmoment"></td>
+        <td><input type="number" value="${escapeHtmlAttribute(rit.verwachtBedrag)}" ${ fullAccess ? '' : 'disabled'} data-field="verwachtBedrag"></td>
         <td>
           <select ${ fullAccess ? '' : 'disabled'} data-field="soort">
             <option value="munt- en briefgeld" ${rit.soort==="munt- en briefgeld" ? "selected" : ""}>munt- en briefgeld</option>
@@ -2058,7 +2093,7 @@ if (isset($_GET['action'])) {
         <td>
           <div class="chauffeur-cell">
             <div class="chauffeur-select-wrapper">
-              <select data-field="chauffeur" data-selected="${chauffeurValue}">
+              <select data-field="chauffeur" data-selected="${escapeHtmlAttribute(chauffeurValue)}">
                 <option value="Chauffeur kiezen">Chauffeur kiezen</option>
               </select>
             </div>
@@ -2068,10 +2103,10 @@ if (isset($_GET['action'])) {
             </div>
           </div>
         </td>
-        <td><input type="date" value="${rit.afhaalmoment || ''}" ${ fullAccess ? '' : 'disabled'} data-field="afhaalmoment"></td>
-        <td><input type="time" value="${rit.afhaaltijd || ''}" ${ fullAccess ? '' : 'disabled'} data-field="afhaaltijd"></td>
-        <td><input type="number" value="${rit.gestort || ''}" ${ fullAccess ? '' : 'disabled'} data-field="gestort"></td>
-        <td><input type="number" class="no-spinner" step="1" value="${rit.gereden ? Math.round(rit.gereden) : ''}" ${ fullAccess ? '' : 'disabled'} data-field="gereden"></td>
+        <td><input type="date" value="${escapeHtmlAttribute(rit.afhaalmoment)}" ${ fullAccess ? '' : 'disabled'} data-field="afhaalmoment"></td>
+        <td><input type="time" value="${escapeHtmlAttribute(rit.afhaaltijd)}" ${ fullAccess ? '' : 'disabled'} data-field="afhaaltijd"></td>
+        <td><input type="number" value="${escapeHtmlAttribute(rit.gestort)}" ${ fullAccess ? '' : 'disabled'} data-field="gestort"></td>
+        <td><input type="number" class="no-spinner" step="1" value="${rit.gereden ? Math.round(Number(rit.gereden)) : ''}" ${ fullAccess ? '' : 'disabled'} data-field="gereden"></td>
         <td>
           <select data-field="status">
             <option value="-">-</option>
@@ -2160,7 +2195,7 @@ if (isset($_GET['action'])) {
           template = template.replace(/\[afhaalbevestiging\]/gi,
                   "<a href='" + afhaalBevestigingUrl + "' target='_blank'>Afhaalbevestiging</a>"
                 );
-          return fetch("sendBasisemail.php", {
+          return apiFetch("sendBasisemail.php", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -2213,7 +2248,7 @@ if (isset($_GET['action'])) {
       if (testMode) {
         const bodyTpl = "Beste Cees,<br><br> Zojuist is er een nieuwe rit in het Dashboard afhaalopdrachten geplaatst. Hierbij moet de collecteopbrengst van [collectegebied] worden afgehaald. Wanneer jij denkt deze rit uit te kunnen voeren, log dan in op https://nierstichtingnederland.nl/afstort en koppel je naam.<br> Succes en goede reis!<br><br> Met vriendelijke groet,<br> Nierstichting collecteteam";
         const body = bodyTpl.replace(/\[collectegebied\]/g, collectegebied);
-        return fetch("sendBasisemail.php", {
+        return apiFetch("sendBasisemail.php", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2245,7 +2280,7 @@ if (isset($_GET['action'])) {
       let gekozenNaam = null;
 
       // Niet in testmodus: vraag via getNearestChauffeur.php wie de dichtstbijzijnde chauffeur is
-      return fetch("getNearestChauffeur.php", {
+      return apiFetch("getNearestChauffeur.php", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: "ritId=" + encodeURIComponent(ritId)
@@ -2282,7 +2317,7 @@ if (isset($_GET['action'])) {
           + "<a href='" + declineLink + "'>Ik kan deze rit niet uitvoeren</a>."
           + "<br><br>Met vriendelijke groet,<br>Nierstichting collectieteam";
 
-        return fetch("sendBasisemail.php", {
+        return apiFetch("sendBasisemail.php", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2299,7 +2334,7 @@ if (isset($_GET['action'])) {
             return mailResult;
           }
 
-          return fetch("registreerRitAanbieding.php", {
+          return apiFetch("registreerRitAanbieding.php", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -2336,7 +2371,7 @@ if (isset($_GET['action'])) {
     }
 
     function logChauffeurVoorstelFout(ritId, message) {
-      return fetch("logChauffeurVoorstelFout.php", {
+      return apiFetch("logChauffeurVoorstelFout.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ritId: ritId, message: message })
@@ -2390,7 +2425,7 @@ if (isset($_GET['action'])) {
         return;
       }
 
-      fetch(buildUrl("deleteRit"), {
+      apiFetch(buildUrl("deleteRit"), {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({ id: ritId })
@@ -2509,7 +2544,7 @@ if (isset($_GET['action'])) {
         };
         ritten.push(data);
       });
-      return fetch(buildUrl("saveRitten"), {
+      return apiFetch(buildUrl("saveRitten"), {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify(ritten)
@@ -2653,7 +2688,7 @@ if (isset($_GET['action'])) {
       }
       
       // Verstuur e-mail naar de contactpersoon
-      fetch("sendBevestigingContact.php", {
+      apiFetch("sendBevestigingContact.php", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
@@ -2677,7 +2712,7 @@ if (isset($_GET['action'])) {
       });
       
       // Verstuur e-mail naar de chauffeur
-      fetch("sendBevestigingChauffeur.php", {
+      apiFetch("sendBevestigingChauffeur.php", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
@@ -2707,7 +2742,7 @@ if (isset($_GET['action'])) {
     <?php if ($fullAccess): ?>
     function deleteChauffeur(name) {
       if (!confirm("Weet je zeker dat je chauffeur '" + name + "' wilt verwijderen?")) return;
-      fetch(buildUrl("deleteChauffeur"), {
+      apiFetch(buildUrl("deleteChauffeur"), {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({ chauffeur: name })
@@ -2727,7 +2762,7 @@ if (isset($_GET['action'])) {
       button.disabled = true;
       result.textContent = 'Medewerker wordt aangemaakt...';
       try {
-        const response = await fetch('addMedewerker.php', {
+        const response = await apiFetch('addMedewerker.php', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({naam: form.elements.naam.value, email: form.elements.email.value,
             csrf: <?php echo json_encode($_SESSION['medewerker_csrf']); ?>})
@@ -2748,7 +2783,7 @@ if (isset($_GET['action'])) {
       const chauffeurPassword = document.getElementById("newChauffeurPassword").value.trim();
       if (!chauffeurName) { alert("Vul een naam in."); return; }
       addButton.disabled = true;
-      fetch(buildUrl("addChauffeur"), {
+      apiFetch(buildUrl("addChauffeur"), {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({ chauffeur: chauffeurName, postcode: chauffeurPostcode, email: chauffeurEmail, IBAN: chauffeurIBAN, wachtwoord: chauffeurPassword })
@@ -2774,7 +2809,7 @@ if (isset($_GET['action'])) {
     }
     function rebuildAllGeocodes() {
       if (!confirm("Weet je zeker dat je alle lat/lon opnieuw wilt laten berekenen?")) return;
-      fetch(buildUrl("rebuildAllGeocodes"), {
+      apiFetch(buildUrl("rebuildAllGeocodes"), {
         method: "POST"
       })
       .then(response => response.json())

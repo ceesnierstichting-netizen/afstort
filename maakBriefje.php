@@ -1,11 +1,9 @@
 <?php
 // maakBriefje.php
 
-// Sessies niet starten en geen inlogcontrole uitvoeren zodat de pagina publiek toegankelijk is.
-// Indien gewenst kun je hier extra controle toevoegen (bijvoorbeeld een token of een hash) om misbruik te voorkomen.
-
-//require_once('config.php'); // Zorg ervoor dat je $pdo en andere config-variabelen nog steeds nodig hebt.
+require_once('session.php');
 require_once('config.php');
+afstort_require_login();
 
 // Helperfuncties voor datum- en tijdopmaak
 function formatDatum($datum) {
@@ -27,6 +25,10 @@ if (isset($_GET['id'])) {
     $data = $stmt->fetch();
     if (!$data) {
         die("Geen rit gevonden met het opgegeven ID.");
+    }
+    if (!hasDashboardAccess($_SESSION) && strcasecmp(trim((string)($data['chauffeur'] ?? '')), trim((string)$_SESSION['username'])) !== 0) {
+        http_response_code(403);
+        exit('Geen toegang tot deze rit.');
     }
 } else {
     die("Geen rit ID opgegeven. Geef bijvoorbeeld in de URL: maakBriefje.php?id=123");

@@ -7,6 +7,9 @@ if (empty($_SESSION['username']) || empty($_SESSION['twofa_verified'])) {
     header("Location: login.php");
     exit;
 }
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    afstort_require_csrf();
+}
 
 // Controleer of er een rit-ID is meegegeven
 if (!isset($_GET['id'])) {
@@ -22,6 +25,10 @@ $rit = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$rit) {
     echo "Rit niet gevonden.";
     exit;
+}
+if (!hasDashboardAccess($_SESSION) && strcasecmp(trim((string)($rit['chauffeur'] ?? '')), trim((string)$_SESSION['username'])) !== 0) {
+    http_response_code(403);
+    exit('Geen toegang tot deze rit.');
 }
 
 // Haal het e-mailadres van de contactpersoon (voor 'Aan') op
@@ -206,6 +213,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
   <h2 class="header-title">Afdracht-gegevens versturen</h2>
   <form method="POST" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="<?php echo htmlspecialchars(afstort_csrf_token(), ENT_QUOTES); ?>">
     <label for="van">Van:</label>
     <input type="email" id="van" name="van" value="<?php echo $vanEmail; ?>" readonly>
     

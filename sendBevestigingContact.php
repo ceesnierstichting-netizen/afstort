@@ -1,5 +1,9 @@
 <?php
+require_once __DIR__ . '/session.php';
 require_once __DIR__ . '/config.php';
+afstort_require_login();
+if (!hasDashboardAccess($_SESSION)) { http_response_code(403); exit('Geen toegang.'); }
+afstort_require_csrf();
 
 ini_set('display_errors', 1);
 error_reporting(E_ALL);

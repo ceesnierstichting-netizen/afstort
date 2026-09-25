@@ -4,13 +4,26 @@ require_once('config.php');
 require_once('twofa.php');
 require_once('qrcode.php');
 
-$user = twofa_get_pending_user($pdo);
+$reenrollAuthenticatedUser = isset($_GET['authenticator'])
+    && !empty($_SESSION['twofa_verified'])
+    && !empty($_SESSION['user_id']);
+
+if ($reenrollAuthenticatedUser) {
+    $stmt = $pdo->prepare('SELECT * FROM chauffeurs WHERE id = ? LIMIT 1');
+    $stmt->execute([(int)$_SESSION['user_id']]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+} else {
+    $user = twofa_get_pending_user($pdo);
+}
 if (!$user) {
     header("Location: login.php");
     exit();
 }
 
-if (!empty($user['twofa_enabled']) && !empty($user['twofa_secret'])) {
+if (!$reenrollAuthenticatedUser && (
+    (!empty($user['twofa_enabled']) && !empty($user['twofa_secret']))
+    || (twofa_has_completed_setup($user) && !isset($_GET['authenticator']))
+)) {
     header("Location: 2fa_verify.php");
     exit();
 }
@@ -247,7 +260,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <main>
         <img src="logohome.png" alt="Logo" class="logo">
         <h1>2FA instellen</h1>
-        <p>Je wachtwoord klopt. Wil je graag inloggen met een authenticator-app? Stel die hier dan in. Liever een code per mail ontvangen, dan kun je deze stap overslaan.</p>
+        <?php if ($reenrollAuthenticatedUser): ?>
+            <p>Scan deze nieuwe QR-code in je authenticator-app. De oude koppeling wordt pas vervangen nadat je de nieuwe code hieronder bevestigt.</p>
+        <?php else: ?>
+            <p>Je wachtwoord klopt. Wil je graag inloggen met een authenticator-app? Stel die hier dan in. Liever een code per mail ontvangen, dan kun je deze stap overslaan.</p>
+        <?php endif; ?>
 
         <?php if (!empty($error)): ?>
             <div class="error" role="alert"><?php echo htmlspecialchars($error); ?></div>
@@ -275,7 +292,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <a href="2fa_verify.php">Ontvang een verificatiecode per e-mail</a>.
         </p>
         <?php endif; ?>
-        <form method="post" action="" novalidate>
+        <form method="post" action="<?php echo $reenrollAuthenticatedUser ? '2fa_setup.php?authenticator=1' : '2fa_setup.php'; ?>" novalidate>
             <label for="twofa_code">Controlecode</label>
             <input
                 type="text"

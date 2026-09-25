@@ -1,6 +1,13 @@
 <?php
 // getChauffeurEmail.php
+require_once('session.php');
 require_once('config.php');
+afstort_require_login();
+if (!hasDashboardAccess($_SESSION)) {
+    http_response_code(403);
+    exit('Geen toegang.');
+}
+header('Content-Type: application/json');
 
 if (isset($_GET['naam'])) {
     $naam = $_GET['naam'];
