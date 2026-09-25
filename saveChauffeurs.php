@@ -13,6 +13,7 @@ if (empty($_SESSION['fullAccess']) || empty($_SESSION['twofa_verified'])) {
     echo json_encode(["status" => "error", "message" => "Niet ingelogd."]);
     exit();
 }
+afstort_require_csrf();
 
 header('Content-Type: application/json');
 

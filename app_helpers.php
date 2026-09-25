@@ -71,6 +71,59 @@ function logRitEmail(PDO $pdo, $ritId, $soort, $ontvanger, $onderwerp, $status, 
     }
 }
 
+function ensureRittenAuditColumns(PDO $pdo) {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+
+    $stmt = $pdo->query("
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'ritten'
+          AND COLUMN_NAME IN ('aangemaakt_door', 'aangemaakt_door_email')
+    ");
+    $existing = array_map('strtolower', $stmt->fetchAll(PDO::FETCH_COLUMN));
+
+    $missingColumns = [];
+    if (!in_array('aangemaakt_door', $existing, true)) {
+        $missingColumns[] = 'ADD COLUMN aangemaakt_door VARCHAR(255) DEFAULT NULL';
+    }
+    if (!in_array('aangemaakt_door_email', $existing, true)) {
+        $missingColumns[] = 'ADD COLUMN aangemaakt_door_email VARCHAR(255) DEFAULT NULL';
+    }
+    if ($missingColumns) {
+        $pdo->exec('ALTER TABLE ritten ' . implode(', ', $missingColumns));
+    }
+
+    $ensured = true;
+}
+
+function validateNieuweRitGegevens(array $rit) {
+    $adres = trim((string)($rit['adres'] ?? ''));
+    if ($adres === '' || !preg_match('/\d/', $adres)) {
+        return 'Vul bij het adres ook een huisnummer in.';
+    }
+
+    $telefoon = preg_replace('/[\s().\/-]+/', '', trim((string)($rit['telefoonnummer'] ?? '')));
+    if (!preg_match('/^(?:0[1-9][0-9]{8}|(?:\+31|0031)[1-9][0-9]{8})$/', $telefoon)) {
+        return 'Vul een geldig Nederlands telefoonnummer in, bijvoorbeeld 06-12345678.';
+    }
+
+    $postcodePlaats = trim((string)($rit['postcodePlaats'] ?? ''));
+    if (!preg_match('/^[1-9][0-9]{3}\s*[A-Za-z]{2}\s*\S.{1,}$/u', $postcodePlaats)) {
+        return 'Vul een volledige postcode en plaats in, bijvoorbeeld 1234AB Plaats.';
+    }
+
+    $email = trim((string)($rit['email'] ?? ''));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return 'Vul een geldig e-mailadres van de contactpersoon in.';
+    }
+
+    return null;
+}
+
 function assertNotMedewerkerRecipient(PDO $pdo, $naam, $email = '') {
     $stmt = $pdo->prepare('SELECT naam FROM chauffeurs WHERE is_medewerker = 1 AND (naam = ? OR email = ?) LIMIT 1');
     $stmt->execute([trim((string)$naam), trim((string)$email)]);

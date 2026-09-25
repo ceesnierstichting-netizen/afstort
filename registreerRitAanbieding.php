@@ -10,6 +10,7 @@ if (!isset($_SESSION['fullAccess']) || empty($_SESSION['twofa_verified'])) {
     echo json_encode(['status' => 'error', 'message' => 'Niet ingelogd.']);
     exit;
 }
+afstort_require_csrf();
 
 $payload = json_decode(file_get_contents('php://input'), true);
 $ritId = (int)($payload['ritId'] ?? 0);

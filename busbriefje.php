@@ -2,19 +2,25 @@
 // busbriefje.php
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
+require_once('session.php');
 require_once('config.php');
+afstort_require_login();
 
 if (!isset($_GET['id'])) {
     die("Geen rit-ID opgegeven.");
 }
 
 $id = intval($_GET['id']);
-$stmt = $pdo->prepare("SELECT collectegebied, wijknaam, gebiedsnummer FROM ritten WHERE id = ?");
+$stmt = $pdo->prepare("SELECT collectegebied, wijknaam, gebiedsnummer, chauffeur FROM ritten WHERE id = ?");
 $stmt->execute([$id]);
 $ride = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$ride) {
     die("Rit niet gevonden.");
+}
+if (!hasDashboardAccess($_SESSION) && strcasecmp(trim((string)$ride['chauffeur']), trim((string)$_SESSION['username'])) !== 0) {
+    http_response_code(403);
+    exit('Geen toegang tot deze rit.');
 }
 ?>
 <!DOCTYPE html>

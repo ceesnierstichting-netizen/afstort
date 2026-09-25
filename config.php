@@ -17,10 +17,24 @@ function noIndexMetaTag() {
 
 sendNoIndexHeaders();
 
-$host    = 'database-5017237046.webspace-host.com';
-$db      = 'dbs13838352';  // Gebruik hier exact je originele database naam
-$user    = 'dbu1220177';
-$pass    = 'W9woort.W9woort.';
+$serverConfig = [];
+$serverConfigPath = dirname(__DIR__) . '/afstort-db-config.php';
+if (is_file($serverConfigPath)) {
+    $loadedConfig = require $serverConfigPath;
+    if (is_array($loadedConfig)) {
+        $serverConfig = $loadedConfig;
+    }
+}
+
+$host = getenv('AFSTORT_DB_HOST') ?: ($_SERVER['AFSTORT_DB_HOST'] ?? $serverConfig['host'] ?? null);
+$db = getenv('AFSTORT_DB_NAME') ?: ($_SERVER['AFSTORT_DB_NAME'] ?? $serverConfig['database'] ?? null);
+$user = getenv('AFSTORT_DB_USER') ?: ($_SERVER['AFSTORT_DB_USER'] ?? $serverConfig['user'] ?? null);
+$pass = getenv('AFSTORT_DB_PASSWORD') ?: ($_SERVER['AFSTORT_DB_PASSWORD'] ?? $serverConfig['password'] ?? null);
+if (!$host || !$db || !$user || !$pass) {
+    error_log('Afstort: databaseconfiguratie ontbreekt (AFSTORT_DB_*).');
+    http_response_code(503);
+    exit('Databaseconfiguratie ontbreekt op de server.');
+}
 $charset = 'utf8mb4';
 
 $dsn = "mysql:host=$host;dbname=$db;charset=$charset";
@@ -33,7 +47,9 @@ $options = [
 try {
     $pdo = new PDO($dsn, $user, $pass, $options);
 } catch (\PDOException $e) {
-    die('Database connectie mislukt: ' . $e->getMessage());
+    error_log('Database connectie mislukt: ' . $e->getMessage());
+    http_response_code(503);
+    exit('Database tijdelijk niet beschikbaar.');
 }
 
 if (!function_exists('normalizeFullAccess')) {

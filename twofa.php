@@ -281,6 +281,20 @@ function twofa_send_email_code($email, $code, $name = '') {
     return mail($email, $subject, $body, $headers);
 }
 
+function twofa_has_completed_setup(array $user) {
+    return (!empty($user['twofa_enabled']) && !empty($user['twofa_secret']))
+        || !empty($user['twofa_confirmed_at']);
+}
+
+function twofa_confirm_email_setup(PDO $pdo, array $user) {
+    if (twofa_has_completed_setup($user)) {
+        return;
+    }
+
+    $stmt = $pdo->prepare('UPDATE chauffeurs SET twofa_confirmed_at = NOW() WHERE id = ?');
+    $stmt->execute([(int)$user['id']]);
+}
+
 function twofa_start_pending_login(array $user) {
     session_regenerate_id(true);
     unset(

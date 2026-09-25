@@ -16,9 +16,11 @@ if (!canViewEmailRapport($_SESSION)) {
 
 ensureRitAanbiedingenTable($pdo);
 ensureRitEmailLogTable($pdo);
+ensureRittenAuditColumns($pdo);
 
 $ritten = $pdo->query("
-    SELECT id, collectegebied, gebiedsnummer, contactpersoon, postcodePlaats, chauffeur, status
+    SELECT id, collectegebied, gebiedsnummer, contactpersoon, postcodePlaats, chauffeur, status,
+           aangemaakt_door, aangemaakt_door_email
     FROM ritten
     ORDER BY id DESC
 ")->fetchAll(PDO::FETCH_ASSOC);
@@ -119,7 +121,7 @@ function rapportDatum($value) {
     <table>
       <thead>
         <tr>
-          <th>Invoerregel</th><th>Collectegebied</th><th>Contactpersoon</th><th>Ritstatus</th>
+          <th>Invoerregel</th><th>Ingevoerd door</th><th>Collectegebied</th><th>Contactpersoon</th><th>Ritstatus</th>
           <th>Datum en tijd</th><th>Gebeurtenis / e-mail</th><th>Ontvanger</th><th>Resultaat</th><th>Details</th>
         </tr>
       </thead>
@@ -130,6 +132,7 @@ function rapportDatum($value) {
         <?php foreach ($events as $index => $event): ?>
         <tr class="<?php echo $index === 0 ? 'rit-start' : ''; ?>">
           <td>#<?php echo (int)$rit['id']; ?></td>
+          <td><?php echo rapportH($rit['aangemaakt_door'] ?: 'Onbekend (bestaande regel)'); ?><?php if (!empty($rit['aangemaakt_door_email'])): ?><br><span class="muted"><?php echo rapportH($rit['aangemaakt_door_email']); ?></span><?php endif; ?></td>
           <td><?php echo rapportH($rit['collectegebied']); ?><br><span class="muted"><?php echo rapportH($rit['gebiedsnummer']); ?> · <?php echo rapportH($rit['postcodePlaats']); ?></span></td>
           <td><?php echo rapportH($rit['contactpersoon']); ?></td>
           <td><?php echo rapportH($rit['status']); ?><br><span class="muted">Chauffeur: <?php echo rapportH($rit['chauffeur']); ?></span></td>
