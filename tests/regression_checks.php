@@ -61,5 +61,21 @@ assertSameValue('Vul een geldig Nederlands telefoonnummer in, bijvoorbeeld 06-12
 assertSameValue('Vul een volledige postcode en plaats in, bijvoorbeeld 1234AB Plaats.', validateNieuweRitGegevens(array_merge($geldigeNieuweRit, ['postcodePlaats' => '2241RX'])), 'postcode en plaats valideren');
 assertSameValue('Vul een geldig e-mailadres van de contactpersoon in.', validateNieuweRitGegevens(array_merge($geldigeNieuweRit, ['email' => 'geen-email'])), 'e-mailadres valideren');
 
+$documentKey = 'test-document-key';
+$busToken = afstort_document_token(42, 'busbriefje', $documentKey);
+assertSameValue(true, afstort_valid_document_token(42, 'busbriefje', $busToken, $documentKey), 'busbriefje met geldige link');
+assertSameValue(false, afstort_valid_document_token(43, 'busbriefje', $busToken, $documentKey), 'link hoort bij een rit');
+assertSameValue(false, afstort_valid_document_token(42, 'maakBriefje', $busToken, $documentKey), 'link hoort bij een document');
+assertSameValue(false, afstort_valid_document_token(42, 'busbriefje', 'ongeldig', $documentKey), 'ongeldige documentlink');
+$documentMail = afstort_prepare_document_email('[busbriefje] [afhaalbevestiging] https://tools.nierstichting.nl/sealbagstorting https://nierstichting.nl/sealbagstorting', 42, $documentKey);
+assertSameValue(true, str_contains($documentMail, 'busbriefje.php?id=42&amp;token=' . $busToken), 'busbriefje in e-mail');
+assertSameValue(true, str_contains($documentMail, 'maakBriefje.php?id=42&amp;token='), 'afhaalbevestiging in e-mail');
+assertSameValue(true, str_contains($documentMail, 'https://nierstichting.nl/sealbag'), 'sealbag-url in e-mail');
+assertSameValue(false, str_contains($documentMail, 'tools.nierstichting.nl/sealbagstorting'), 'oude sealbag-url vervangen');
+assertSameValue(false, str_contains($documentMail, 'nierstichting.nl/sealbagstorting'), 'sealbagstorting-url vervangen');
+$oudeDocumentMail = afstort_prepare_document_email('<a href="https://nierstichtingnederland.nl/afstort/maakBriefje.php?id=999">Afhaalbevestiging</a>', 42, $documentKey);
+assertSameValue(true, str_contains($oudeDocumentMail, 'maakBriefje.php?id=42&amp;token='), 'bestaande documentlink verwijst naar actuele rit');
+assertSameValue(false, str_contains($oudeDocumentMail, 'id=999'), 'oud rit-ID uit mailtemplate verwijderd');
+
 session_destroy();
 fwrite(STDOUT, "Regression checks passed.\n");

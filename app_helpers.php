@@ -486,3 +486,57 @@ function magChauffeurRitVrijKiezen(PDO $pdo, $ritId, $chauffeurNaam) {
 
     return isRitVrijBeschikbaar($pdo, $ritId);
 }
+
+const AFSTORT_DOCUMENT_BASE_URL = 'https://nierstichtingnederland.nl/afstort';
+
+function afstort_rit_exists(PDO $pdo, int $ritId): bool {
+    if ($ritId <= 0) {
+        return false;
+    }
+    $stmt = $pdo->prepare('SELECT 1 FROM ritten WHERE id = ?');
+    $stmt->execute([$ritId]);
+    return (bool)$stmt->fetchColumn();
+}
+
+function afstort_document_token(int $ritId, string $document, string $key): string {
+    return hash_hmac('sha256', $document . ':' . $ritId, $key);
+}
+
+function afstort_valid_document_token(int $ritId, string $document, string $token, string $key): bool {
+    return $ritId > 0
+        && preg_match('/^[a-f0-9]{64}$/D', $token) === 1
+        && hash_equals(afstort_document_token($ritId, $document, $key), $token);
+}
+
+function afstort_document_url(int $ritId, string $document, string $key): string {
+    return AFSTORT_DOCUMENT_BASE_URL . '/' . $document . '.php?id=' . $ritId
+        . '&token=' . afstort_document_token($ritId, $document, $key);
+}
+
+function afstort_prepare_document_email(string $body, int $ritId, string $key): string {
+    $body = str_ireplace(
+        [
+            'https://tools.nierstichting.nl/sealbagstorting',
+            'https://nierstichting.nl/sealbagstorting',
+        ],
+        'https://nierstichting.nl/sealbag',
+        $body
+    );
+
+    // Ook bestaande document-URL's in opgeslagen mailtemplates moeten naar deze rit wijzen.
+    $body = preg_replace_callback(
+        '~(?:https?://[^\s"\'<>]+/)?(busbriefje|maakBriefje)\.php(?:\?[^\s"\'<>]*)?~i',
+        static function (array $matches) use ($ritId, $key): string {
+            $document = strcasecmp($matches[1], 'busbriefje') === 0 ? 'busbriefje' : 'maakBriefje';
+            return htmlspecialchars(afstort_document_url($ritId, $document, $key), ENT_QUOTES, 'UTF-8');
+        },
+        $body
+    );
+
+    $links = [
+        '[busbriefje]' => '<a href="' . htmlspecialchars(afstort_document_url($ritId, 'busbriefje', $key), ENT_QUOTES, 'UTF-8') . '" target="_blank">Busbriefje</a>',
+        '[brusbriefje]' => '<a href="' . htmlspecialchars(afstort_document_url($ritId, 'busbriefje', $key), ENT_QUOTES, 'UTF-8') . '" target="_blank">Busbriefje</a>',
+        '[afhaalbevestiging]' => '<a href="' . htmlspecialchars(afstort_document_url($ritId, 'maakBriefje', $key), ENT_QUOTES, 'UTF-8') . '" target="_blank">Afhaalbevestiging</a>',
+    ];
+    return str_ireplace(array_keys($links), array_values($links), $body);
+}

@@ -1,9 +1,7 @@
 <?php
 // maakBriefje.php
 
-require_once('session.php');
 require_once('config.php');
-afstort_require_login();
 
 // Helperfuncties voor datum- en tijdopmaak
 function formatDatum($datum) {
@@ -26,13 +24,24 @@ if (isset($_GET['id'])) {
     if (!$data) {
         die("Geen rit gevonden met het opgegeven ID.");
     }
-    if (!hasDashboardAccess($_SESSION) && strcasecmp(trim((string)($data['chauffeur'] ?? '')), trim((string)$_SESSION['username'])) !== 0) {
-        http_response_code(403);
-        exit('Geen toegang tot deze rit.');
+    $token = (string)($_GET['token'] ?? '');
+    if (!afstort_valid_document_token((int)$id, 'maakBriefje', $token, $documentLinkKey)) {
+        if ($token !== '') {
+            http_response_code(403);
+            exit('Ongeldige documentlink.');
+        }
+        require_once('session.php');
+        afstort_require_login();
+        if (!hasDashboardAccess($_SESSION) && strcasecmp(trim((string)($data['chauffeur'] ?? '')), trim((string)$_SESSION['username'])) !== 0) {
+            http_response_code(403);
+            exit('Geen toegang tot deze rit.');
+        }
     }
 } else {
     die("Geen rit ID opgegeven. Geef bijvoorbeeld in de URL: maakBriefje.php?id=123");
 }
+header('Cache-Control: private, no-store');
+header('Referrer-Policy: no-referrer');
 
 // Bepaal het gecombineerde veld voor Collectegebied en Wijknaam
 $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? ''));

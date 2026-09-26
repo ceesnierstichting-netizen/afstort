@@ -1657,6 +1657,23 @@ if (isset($_GET['action'])) {
       return true;
     }
 
+    document.getElementById("new-rit-form")?.addEventListener("input", event => {
+      const field = event.target;
+      if (!field.validity?.customError) return;
+      field.setCustomValidity("");
+      const result = document.getElementById("new-rit-result");
+      if (result?.classList.contains("error")) {
+        result.textContent = "";
+        result.classList.remove("error");
+      }
+    });
+
+    document.getElementById("new-rit-form")?.addEventListener("reset", event => {
+      ["adres", "telefoonnummer", "postcodePlaats", "email"].forEach(name =>
+        event.currentTarget.elements.namedItem(name)?.setCustomValidity("")
+      );
+    });
+
     function normalizeChauffeurValue(value) {
       const v = (value || "").trim();
       if (!v || v === "-- Kies een chauffeur --" || v === "Kies een chauffeur") {
@@ -2187,14 +2204,6 @@ if (isset($_GET['action'])) {
             .replace(/\[afhaaltijd\]/gi, formattedTijd)
             .replace(/\[formattedDatum\]/gi, formattedDatum)
             .replace(/\[formattedTijd\]/gi, formattedTijd);
-          let busBriefjeUrl = "https://nierstichtingnederland.nl/afstort/busbriefje.php?id=" + ritId;
-          template = template.replace(/\[busbriefje\]/gi,
-                  "<a href='" + busBriefjeUrl + "' target='_blank'>Busbriefje</a>"
-                );
-          let afhaalBevestigingUrl = "https://nierstichtingnederland.nl/afstort/maakBriefje.php?id=" + ritId;
-          template = template.replace(/\[afhaalbevestiging\]/gi,
-                  "<a href='" + afhaalBevestigingUrl + "' target='_blank'>Afhaalbevestiging</a>"
-                );
           return apiFetch("sendBasisemail.php", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2602,12 +2611,19 @@ if (isset($_GET['action'])) {
       document.getElementById("sendEmailOverlay").style.display = "flex";
     }
     
-    function confirmRit() {
+    async function confirmRit() {
       if (!currentConfirmRow) return;
 
       // Dubbelcheck (mocht modal via externe call geopend zijn)
       if (!validateRitConfirmationRow(currentConfirmRow)) {
         showIncompleteMsg();
+        return;
+      }
+      let ritId;
+      try {
+        ritId = await ensureRowSaved(currentConfirmRow);
+      } catch (error) {
+        alert("De rit kon niet worden opgeslagen. De bevestigingsmails zijn niet verstuurd.");
         return;
       }
       
@@ -2636,7 +2652,6 @@ if (isset($_GET['action'])) {
       }
       
       var gebiedsnummer   = currentConfirmRow.querySelector("input[data-field='gebiedsnummer']").value;
-      var ritId           = currentConfirmRow.querySelector(".rowId").value;
       
       bodyContact = bodyContact.replace(/\[gebiedsnummer\]/gi, gebiedsnummer)
                                .replace(/\[collectegebied\]/gi, collectegebied)
@@ -2671,16 +2686,6 @@ if (isset($_GET['action'])) {
                                    .replace(/\[formattedTijd\]/gi, formattedTijd)
                                    .replace(/\[verwacht\]/gi, verwacht);
       
-      var busBriefjeUrl = "https://nierstichtingnederland.nl/afstort/busbriefje.php?id=" + ritId;
-      bodyContact = bodyContact.replace(/\[busbriefje\]/gi, "<a href='" + busBriefjeUrl + "' target='_blank'>Busbriefje</a>")
-                               .replace(/\[brusbriefje\]/gi, "<a href='" + busBriefjeUrl + "' target='_blank'>Busbriefje</a>");
-      bodyChauffeur = bodyChauffeur.replace(/\[busbriefje\]/gi, "<a href='" + busBriefjeUrl + "' target='_blank'>Busbriefje</a>")
-                                   .replace(/\[brusbriefje\]/gi, "<a href='" + busBriefjeUrl + "' target='_blank'>Busbriefje</a>");
-      
-      var afhaalBevestigingUrl = "https://nierstichtingnederland.nl/afstort/maakBriefje.php?id=" + ritId;
-      bodyContact = bodyContact.replace(/\[afhaalbevestiging\]/gi, "<a href='" + afhaalBevestigingUrl + "' target='_blank'>Afhaalbevestiging</a>");
-      bodyChauffeur = bodyChauffeur.replace(/\[afhaalbevestiging\]/gi, "<a href='" + afhaalBevestigingUrl + "' target='_blank'>Afhaalbevestiging</a>");
-      
       var wijknaam = "";
       var wijkField = currentConfirmRow.querySelector("input[data-field='wijknaam']");
       if(wijkField) {
@@ -2694,8 +2699,6 @@ if (isset($_GET['action'])) {
         body: JSON.stringify({
           to: emailContact,
           body: bodyContact,
-          busbriefje_url: busBriefjeUrl,
-          afhaalbevestiging_url: afhaalBevestigingUrl,
           wijknaam: wijknaam,
           ritId: ritId
         })
@@ -2718,8 +2721,6 @@ if (isset($_GET['action'])) {
         body: JSON.stringify({
           to: chauffeurEmail,
           body: bodyChauffeur,
-          busbriefje_url: busBriefjeUrl,
-          afhaalbevestiging_url: afhaalBevestigingUrl,
           wijknaam: wijknaam,
           ritId: ritId
         })

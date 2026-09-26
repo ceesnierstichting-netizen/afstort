@@ -33,25 +33,13 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL) || empty($subject) || empty($body
     exit;
 }
 
-// Zorg ervoor dat de JSON-velden 'busbriefje' en 'afhaalbevestiging' de volledige URL's bevatten.
-$busBriefjeUrl = $data['busbriefje'] ?? '';
-$afhaalBevestigingUrl = $data['afhaalbevestiging'] ?? '';
-
-// Bouw de HTML-links met dubbele aanhalingstekens in de attributen
-$busBriefjeLink = $busBriefjeUrl !== '' ? '<a href="' . htmlspecialchars($busBriefjeUrl, ENT_QUOTES) . '" target="_blank">busbriefje</a>' : '';
-$afhaalBevestigingLink = $afhaalBevestigingUrl !== '' ? '<a href="' . htmlspecialchars($afhaalBevestigingUrl, ENT_QUOTES) . '" target="_blank">afhaalbevestiging</a>' : '';
-
-// Definieer de placeholders en de vervangingswaarden
-$placeholders = ['[naam]', '[soort]', '[verwacht]', '[busbriefje]', '[afhaalbevestiging]'];
-$replacements = [
-    $data['naam'] ?? '',
-    $data['soort'] ?? '',
-    $data['verwacht'] ?? '',
-    $busBriefjeLink,
-    $afhaalBevestigingLink
-];
-
-$body = str_replace($placeholders, $replacements, $body);
+$ritId = (int)($data['ritId'] ?? 0);
+if (!afstort_rit_exists($pdo, $ritId)) {
+    ob_clean();
+    echo json_encode(['status' => 'error', 'message' => 'Rit niet gevonden']);
+    exit;
+}
+$body = afstort_prepare_document_email($body, $ritId, $documentLinkKey);
 
 $headers = "From: " . $from . "\r\n" .
            "Reply-To: " . $from . "\r\n" .

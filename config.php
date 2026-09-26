@@ -35,6 +35,8 @@ if (!$host || !$db || !$user || !$pass) {
     http_response_code(503);
     exit('Databaseconfiguratie ontbreekt op de server.');
 }
+$documentLinkSecret = getenv('AFSTORT_DOCUMENT_LINK_KEY') ?: ($_SERVER['AFSTORT_DOCUMENT_LINK_KEY'] ?? $serverConfig['document_link_key'] ?? $pass);
+$documentLinkKey = hash('sha256', 'afstort-documenten-v1:' . $documentLinkSecret, true);
 $charset = 'utf8mb4';
 
 $dsn = "mysql:host=$host;dbname=$db;charset=$charset";
