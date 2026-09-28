@@ -879,23 +879,32 @@ if (isset($_GET['action'])) {
     }
 
     #chauffeur-section .user-tabs { display: flex; gap: 8px; border-bottom: 1px solid #cfd8e3; }
-    #chauffeur-section .user-tab { margin: 0 0 -1px; border: 1px solid transparent; border-bottom: 2px solid transparent; border-radius: 8px 8px 0 0; background: transparent; color: #334155; font-size: 1rem; padding: 12px 18px; }
-    #chauffeur-section .user-tab:hover { background: #f1f5f9; transform: none; }
-    #chauffeur-section .user-tab[aria-selected="true"] { color: var(--primary-dark); border-color: #cfd8e3; border-bottom-color: #fff; background: #fff; }
+    #chauffeur-section .user-tab { margin: 0 0 -1px; border: 1px solid; border-bottom-width: 2px; border-radius: 8px 8px 0 0; font-size: 1rem; padding: 12px 18px; transform: none; }
+    #chauffeur-section #chauffeurs-tab { background: #e8f5e9; border-color: #c6e4cb; color: #205a32; }
+    #chauffeur-section #medewerkers-tab { background: #e8f2ff; border-color: #c9def8; color: #194e83; }
+    #chauffeur-section #chauffeurs-tab:hover { background: #d8eddc; }
+    #chauffeur-section #medewerkers-tab:hover { background: #dbeaff; }
+    #chauffeur-section .user-tab[aria-selected="true"] { border-bottom-color: #fff !important; box-shadow: inset 0 3px currentColor; }
     #chauffeur-section .user-tab:focus-visible { outline: 3px solid #fda4af; outline-offset: 2px; }
     #chauffeur-section .user-panel { padding-top: 18px; }
     #chauffeur-section [hidden] { display: none !important; }
-    #chauffeurList, #medewerkerList { margin: 0 0 20px; padding-left: 20px; }
-    #chauffeurList li, #medewerkerList li { margin-bottom: 10px; overflow-wrap: anywhere; }
+    #chauffeurList, #medewerkerList { display: grid; gap: 8px; margin: 0 0 20px; padding: 0; list-style: none; }
+    #chauffeurList li, #medewerkerList li { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
+    #chauffeurList .user-details, #medewerkerList .user-details { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
+    #chauffeurList .user-details strong, #medewerkerList .user-details strong { color: #172033; }
+    #chauffeurList .user-meta, #medewerkerList .user-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: #526174; font-size: 0.88rem; }
+    #chauffeurList .user-list-actions, #medewerkerList .user-list-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 6px; flex-shrink: 0; }
     #chauffeur-section .user-panel-actions { margin-top: 14px; }
-    #chauffeurList .list-delete, #medewerkerList .list-delete { background: none; border: 0; padding: 0; margin: 0 0 0 10px; color: #b91c1c; font: inherit; text-decoration: underline; cursor: pointer; }
-    #chauffeurList .list-delete:hover, #medewerkerList .list-delete:hover { color: #7f1d1d; transform: none; }
+    #chauffeurList .list-delete, #medewerkerList .list-delete { background: #fff1f2; border: 1px solid #fecdd3; padding: 6px 10px; margin: 0; color: #9f1239; font-size: 0.85rem; }
+    #chauffeurList .list-delete:hover, #medewerkerList .list-delete:hover { background: #ffe4e6; transform: none; }
     #chauffeurList .list-delete:disabled, #medewerkerList .list-delete:disabled { opacity: 0.5; cursor: wait; }
-    #chauffeurList .list-recovery, #medewerkerList .list-recovery { background: none; border: 0; padding: 0; margin: 0 0 0 10px; color: #1769c2; font: inherit; text-decoration: underline; cursor: pointer; }
-    #chauffeurList .list-recovery:hover, #medewerkerList .list-recovery:hover { color: #0b4b91; transform: none; }
+    #chauffeurList .list-recovery, #medewerkerList .list-recovery { background: #eaf3ff; border: 1px solid #c9def8; padding: 6px 10px; margin: 0; color: #164f88; font-size: 0.85rem; }
+    #chauffeurList .list-recovery:hover, #medewerkerList .list-recovery:hover { background: #dbeaff; transform: none; }
     #chauffeurList .list-recovery:disabled, #medewerkerList .list-recovery:disabled { opacity: 0.5; cursor: wait; }
     @media (max-width: 700px) {
       #chauffeur-section .user-tab { flex: 1; padding: 12px 8px; }
+      #chauffeurList li, #medewerkerList li { align-items: flex-start; flex-direction: column; }
+      #chauffeurList .user-list-actions, #medewerkerList .user-list-actions { justify-content: flex-start; flex-shrink: 1; }
     }
 
     #chauffeur-section input,
@@ -2014,6 +2023,28 @@ if (isset($_GET['action'])) {
         });
     }
 
+    function createUserListItem(name, metadata) {
+      const li = document.createElement('li');
+      const details = document.createElement('div');
+      details.className = 'user-details';
+      const title = document.createElement('strong');
+      title.textContent = name;
+      details.appendChild(title);
+      const values = metadata.filter(Boolean);
+      if (values.length) {
+        const meta = document.createElement('div');
+        meta.className = 'user-meta';
+        values.forEach(value => {
+          const part = document.createElement('span');
+          part.textContent = value;
+          meta.appendChild(part);
+        });
+        details.appendChild(meta);
+      }
+      li.appendChild(details);
+      return li;
+    }
+
     async function loadMedewerkers() {
       const list = document.getElementById('medewerkerList');
       if (!list) return;
@@ -2028,17 +2059,16 @@ if (isset($_GET['action'])) {
           list.appendChild(empty);
         }
         data.forEach(medewerker => {
-          const li = document.createElement('li');
-          const name = document.createElement('strong');
-          name.textContent = medewerker.naam;
-          li.append(name, document.createTextNode(' (' + medewerker.email + ')'));
+          const li = createUserListItem(medewerker.naam, [medewerker.email]);
+          const actions = document.createElement('div');
+          actions.className = 'user-list-actions';
           if (canAdmin) {
             const recovery = document.createElement('button');
             recovery.type = 'button';
             recovery.className = 'list-recovery';
             recovery.textContent = 'Stuur 2FA-herstelmail';
             recovery.addEventListener('click', () => sendTwofaRecoveryMail(medewerker.id, medewerker.naam, recovery));
-            li.appendChild(recovery);
+            actions.appendChild(recovery);
           }
           if (canAdmin && Number(medewerker.id) !== <?php echo (int)($_SESSION['user_id'] ?? 0); ?>) {
             const button = document.createElement('button');
@@ -2059,8 +2089,9 @@ if (isset($_GET['action'])) {
                 await loadMedewerkers();
               } catch (error) { alert(error.message); button.disabled = false; }
             });
-            li.appendChild(button);
+            actions.appendChild(button);
           }
+          if (actions.childElementCount) li.appendChild(actions);
           list.appendChild(li);
         });
       } catch (error) {
@@ -2078,29 +2109,29 @@ if (isset($_GET['action'])) {
           const chauffeurList = document.getElementById("chauffeurList");
           chauffeurList.innerHTML = "";
           data.forEach(chauffeur => {
-            const li = document.createElement("li");
             const postcode = (chauffeur.postcode || "").trim();
             const email = (chauffeur.email || "").trim();
-            const details = [postcode, email].filter(Boolean).join(' | ');
-            const label = document.createElement('strong');
-            label.textContent = details ? chauffeur.naam + ' (' + details + ')' : chauffeur.naam;
-            li.appendChild(label);
+            const li = createUserListItem(chauffeur.naam, [postcode, email]);
+            const actions = document.createElement('div');
+            actions.className = 'user-list-actions';
             if (canAdmin && chauffeur.naam !== 'Admin') {
               const recovery = document.createElement('button');
               recovery.type = 'button';
               recovery.className = 'list-recovery';
               recovery.textContent = 'Stuur 2FA-herstelmail';
               recovery.addEventListener('click', () => sendTwofaRecoveryMail(chauffeur.id, chauffeur.naam, recovery));
-              li.appendChild(recovery);
+              actions.appendChild(recovery);
             }
             if (canAdmin && chauffeur.naam !== 'Admin' && Number(chauffeur.is_medewerker) !== 1) {
               const remove = document.createElement('button');
               remove.type = 'button';
               remove.className = 'list-delete';
               remove.textContent = 'Verwijder';
+              remove.setAttribute('aria-label', chauffeur.naam + ' verwijderen');
               remove.addEventListener('click', () => deleteChauffeur(chauffeur.naam));
-              li.appendChild(remove);
+              actions.appendChild(remove);
             }
+            if (actions.childElementCount) li.appendChild(actions);
             chauffeurList.appendChild(li);
           });
           <?php endif; ?>
