@@ -37,6 +37,7 @@ if (!$host || !$db || !$user || !$pass) {
 }
 $documentLinkSecret = getenv('AFSTORT_DOCUMENT_LINK_KEY') ?: ($_SERVER['AFSTORT_DOCUMENT_LINK_KEY'] ?? $serverConfig['document_link_key'] ?? $pass);
 $documentLinkKey = hash('sha256', 'afstort-documenten-v1:' . $documentLinkSecret, true);
+$twofaRememberKey = hash('sha256', 'afstort-2fa-vandaag-v1:' . $documentLinkSecret, true);
 $charset = 'utf8mb4';
 
 $dsn = "mysql:host=$host;dbname=$db;charset=$charset";

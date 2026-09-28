@@ -20,10 +20,7 @@ if (!$user) {
     exit();
 }
 
-if (!$reenrollAuthenticatedUser && (
-    (!empty($user['twofa_enabled']) && !empty($user['twofa_secret']))
-    || (twofa_has_completed_setup($user) && !isset($_GET['authenticator']))
-)) {
+if (!$reenrollAuthenticatedUser && twofa_has_completed_setup($user)) {
     header("Location: 2fa_verify.php");
     exit();
 }

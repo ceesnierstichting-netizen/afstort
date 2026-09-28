@@ -31,6 +31,19 @@ $chauffeur = ['id' => 3, 'naam' => 'Chauffeur', 'email' => 'chauffeur@example.te
 assertSameValue(false, twofa_has_completed_setup($medewerker), 'nieuw account begint met 2FA-instelling');
 assertSameValue(true, twofa_has_completed_setup($medewerker + ['twofa_confirmed_at' => '2026-09-24 12:00:00']), 'e-mailverificatie rondt instelling af');
 assertSameValue(true, twofa_has_completed_setup($chauffeur + ['twofa_enabled' => 1, 'twofa_secret' => 'SECRET']), 'authenticator rondt instelling af');
+$rememberUser = $chauffeur + ['wachtwoord' => 'password-hash', 'twofa_confirmed_at' => '2026-09-24 12:00:00'];
+$rememberKey = 'test-key';
+$beforeMidnight = (new DateTimeImmutable('2026-09-28 23:59:00', new DateTimeZone('Europe/Amsterdam')))->getTimestamp();
+$afterMidnight = (new DateTimeImmutable('2026-09-29 00:00:00', new DateTimeZone('Europe/Amsterdam')))->getTimestamp();
+$rememberToken = twofa_remember_token($rememberUser, $rememberKey, $beforeMidnight);
+assertSameValue($afterMidnight, twofa_remember_expiry($beforeMidnight), 'vertrouwde browser vervalt om Nederlandse middernacht');
+assertSameValue(true, twofa_remember_valid($rememberToken, $rememberUser, $rememberKey, $beforeMidnight), 'geldige dagcookie');
+assertSameValue(false, twofa_remember_valid($rememberToken, $rememberUser, $rememberKey, $afterMidnight), 'dagcookie is verlopen');
+assertSameValue(false, twofa_remember_valid($rememberToken, $medewerker + ['wachtwoord' => 'password-hash', 'twofa_confirmed_at' => '2026-09-24 12:00:00'], $rememberKey, $beforeMidnight), 'dagcookie hoort bij account');
+assertSameValue(false, twofa_remember_valid($rememberToken, array_merge($rememberUser, ['wachtwoord' => 'new-password-hash']), $rememberKey, $beforeMidnight), 'wachtwoordwijziging trekt dagcookie in');
+assertSameValue(false, twofa_remember_valid($rememberToken, array_merge($rememberUser, ['twofa_secret' => 'NEWSECRET']), $rememberKey, $beforeMidnight), 'nieuwe authenticator trekt dagcookie in');
+assertSameValue(false, twofa_remember_valid($rememberToken . 'x', $rememberUser, $rememberKey, $beforeMidnight), 'ongeldige dagcookie');
+assertSameValue(false, twofa_remember_valid(twofa_remember_token($chauffeur, $rememberKey, $beforeMidnight), $chauffeur, $rememberKey, $beforeMidnight), 'onvoltooide 2FA wordt niet overgeslagen');
 foreach ([[$admin, true, true], [$medewerker, true, false], [$chauffeur, false, false]] as [$user, $dashboard, $adminRights]) {
     assertSameValue($dashboard, hasDashboardAccess($user), $user['naam'] . ' dashboard');
     assertSameValue($adminRights, hasAdminPermissions($user), $user['naam'] . ' beheerdersacties');

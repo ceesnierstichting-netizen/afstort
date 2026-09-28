@@ -45,6 +45,7 @@ header('Referrer-Policy: no-referrer');
 
 // Bepaal het gecombineerde veld voor Collectegebied en Wijknaam
 $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? ''));
+$gebiedsnummer = trim((string)($data['gebiedsnummer'] ?? ''));
 ?>
 <!DOCTYPE html>
 <html lang="nl">
@@ -153,7 +154,7 @@ $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? '')
     <!-- Kopie 1: Briefje 1 (links) -->
     <div class="form-section">
       <h2>Bevestiging afhaal<br>collecte-opbrengst</h2>
-      <div class="field"><label>Collectegebied:</label> <?php echo htmlspecialchars($collecteEnWijk); ?></div>
+      <div class="field"><label>Collectegebied:</label> <?php echo htmlspecialchars($collecteEnWijk); ?><?php if ($gebiedsnummer !== ''): ?> <strong>(<?php echo htmlspecialchars($gebiedsnummer); ?>)</strong><?php endif; ?></div>
       <div class="field"><label>Contactpersoon:</label> <?php echo htmlspecialchars($data['contactpersoon']); ?></div>
       <div class="field"><label>Adres:</label> <?php echo htmlspecialchars($data['adres']); ?></div>
       <div class="field"><label>Postcode/Plaats:</label> <?php echo htmlspecialchars($data['postcodePlaats']); ?></div>
@@ -199,7 +200,7 @@ $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? '')
     <!-- Kopie 2: Briefje 2 (rechts) -->
     <div class="form-section">
       <h2>Bevestiging afhaal<br>collecte-opbrengst</h2>
-      <div class="field"><label>Collectegebied:</label> <?php echo htmlspecialchars($collecteEnWijk); ?></div>
+      <div class="field"><label>Collectegebied:</label> <?php echo htmlspecialchars($collecteEnWijk); ?><?php if ($gebiedsnummer !== ''): ?> <strong>(<?php echo htmlspecialchars($gebiedsnummer); ?>)</strong><?php endif; ?></div>
       <div class="field"><label>Contactpersoon:</label> <?php echo htmlspecialchars($data['contactpersoon']); ?></div>
       <div class="field"><label>Adres:</label> <?php echo htmlspecialchars($data['adres']); ?></div>
       <div class="field"><label>Postcode/Plaats:</label> <?php echo htmlspecialchars($data['postcodePlaats']); ?></div>

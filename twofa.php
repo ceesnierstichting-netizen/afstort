@@ -7,6 +7,54 @@ const TWOFA_PENDING_TTL = 600;
 const TWOFA_EMAIL_CODE_TTL = 600;
 const TWOFA_EMAIL_RESEND_SECONDS = 60;
 const TWOFA_EMAIL_MAX_ATTEMPTS = 5;
+const TWOFA_REMEMBER_COOKIE = 'AFSTORT_2FA_VANDAAG';
+
+function twofa_remember_expiry($now) {
+    return (new DateTimeImmutable('@' . $now))
+        ->setTimezone(new DateTimeZone('Europe/Amsterdam'))
+        ->modify('tomorrow')
+        ->setTime(0, 0)
+        ->getTimestamp();
+}
+
+function twofa_remember_signature(array $user, $expiresAt, $key) {
+    $accountState = implode('|', [
+        (string)$user['id'],
+        (string)($user['email'] ?? ''),
+        (string)($user['wachtwoord'] ?? ''),
+        (string)($user['twofa_secret'] ?? ''),
+        (string)($user['twofa_enabled'] ?? ''),
+    ]);
+    return hash_hmac('sha256', 'afstort-2fa-vandaag-v1|' . $expiresAt . '|' . $accountState, $key);
+}
+
+function twofa_remember_token(array $user, $key, $now) {
+    $expiresAt = twofa_remember_expiry($now);
+    return $expiresAt . '.' . twofa_remember_signature($user, $expiresAt, $key);
+}
+
+function twofa_remember_valid($token, array $user, $key, $now) {
+    if (!is_string($token) || !preg_match('/^([0-9]{10})\.([a-f0-9]{64})$/D', $token, $matches)) {
+        return false;
+    }
+    $expiresAt = (int)$matches[1];
+    return twofa_has_completed_setup($user)
+        && $now < $expiresAt
+        && $expiresAt === twofa_remember_expiry($now)
+        && hash_equals(twofa_remember_signature($user, $expiresAt, $key), $matches[2]);
+}
+
+function twofa_remember_today(array $user, $key) {
+    $now = time();
+    $expiresAt = twofa_remember_expiry($now);
+    setcookie(TWOFA_REMEMBER_COOKIE, twofa_remember_token($user, $key, $now), [
+        'expires' => $expiresAt,
+        'path' => '/',
+        'secure' => true,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+}
 
 function twofa_base32_encode($data) {
     $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';

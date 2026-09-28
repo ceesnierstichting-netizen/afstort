@@ -30,6 +30,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($user && password_verify($password, $user['wachtwoord'])) {
             authRateSuccess($pdo, 'login', $email);
+            if (twofa_remember_valid($_COOKIE[TWOFA_REMEMBER_COOKIE] ?? null, $user, $twofaRememberKey, time())) {
+                twofa_finish_login($user);
+                header("Location: index.php");
+                exit();
+            }
             twofa_start_pending_login($user);
             if (twofa_has_completed_setup($user)) {
                 header("Location: 2fa_verify.php");
