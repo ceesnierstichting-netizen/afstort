@@ -347,6 +347,7 @@ if (isset($_GET['view']) && $_GET['view'] === 'desktop') {
                 </div>
             </div>
             <div class="hero-actions">
+                <a class="secondary-link" href="2fa_setup.php?authenticator=1">Authenticator-app opnieuw koppelen</a>
                 <a class="secondary-link" href="logout.php">Uitloggen</a>
             </div>
             <div class="summary">

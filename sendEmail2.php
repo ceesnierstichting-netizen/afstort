@@ -1,4 +1,11 @@
 <?php
+require_once __DIR__ . '/session.php';
+require_once __DIR__ . '/config.php';
+afstort_require_login();
+if (!hasDashboardAccess($_SESSION)) { http_response_code(403); exit('Geen toegang.'); }
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    afstort_require_csrf();
+}
 if (!headers_sent()) {
     header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex', true);
 }
@@ -7,11 +14,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Ophalen van formuliergegevens
     $to      = $_POST['to'] ?? '';
-    $from    = $_POST['from'] ?? '';
+    $from    = 'noreply@nierstichtingnederland.nl';
     $cc      = $_POST['cc'] ?? '';
     $bcc     = $_POST['bcc'] ?? '';
     $subject = $_POST['subject'] ?? 'Afronding afstort collecte-opbrengst';
     $body    = $_POST['body'] ?? '';
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL) ||
+        ($cc !== '' && !filter_var($cc, FILTER_VALIDATE_EMAIL)) ||
+        ($bcc !== '' && !filter_var($bcc, FILTER_VALIDATE_EMAIL)) ||
+        preg_match('/[\r\n]/', (string)$subject)) {
+        http_response_code(422);
+        exit('Ongeldige e-mailgegevens.');
+    }
 
     // Maak een unieke boundary-string
     $boundary = md5(time());
@@ -112,6 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
     <h2>Afronding afstort collecte-opbrengst</h2>
     <form method="post" enctype="multipart/form-data" id="emailForm">
+        <input type="hidden" name="csrf" value="<?php echo htmlspecialchars(afstort_csrf_token(), ENT_QUOTES); ?>">
         <label>Van:
             <input type="email" name="from" value="<?php echo htmlspecialchars($from); ?>" readonly>
         </label>

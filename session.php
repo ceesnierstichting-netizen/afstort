@@ -2,7 +2,34 @@
 
 if (session_status() === PHP_SESSION_NONE) {
     session_name('AFSTORTSESSID');
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'secure' => true,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+    ini_set('session.use_strict_mode', '1');
     session_start();
+}
+
+function afstort_require_login() {
+    if (empty($_SESSION['username']) || empty($_SESSION['twofa_verified'])) {
+        http_response_code(401);
+        exit('Niet ingelogd.');
+    }
+}
+
+function afstort_csrf_token() {
+    return $_SESSION['csrf_token'] ?? ($_SESSION['csrf_token'] = bin2hex(random_bytes(32)));
+}
+
+function afstort_require_csrf() {
+    $token = (string)($_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf'] ?? '');
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !hash_equals(afstort_csrf_token(), $token)) {
+        http_response_code(403);
+        exit('Ongeldig verzoek.');
+    }
 }
 
 const AFSTORT_IDLE_TIMEOUT_SECONDS = 3600;

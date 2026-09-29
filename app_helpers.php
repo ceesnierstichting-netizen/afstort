@@ -71,6 +71,59 @@ function logRitEmail(PDO $pdo, $ritId, $soort, $ontvanger, $onderwerp, $status, 
     }
 }
 
+function ensureRittenAuditColumns(PDO $pdo) {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+
+    $stmt = $pdo->query("
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'ritten'
+          AND COLUMN_NAME IN ('aangemaakt_door', 'aangemaakt_door_email')
+    ");
+    $existing = array_map('strtolower', $stmt->fetchAll(PDO::FETCH_COLUMN));
+
+    $missingColumns = [];
+    if (!in_array('aangemaakt_door', $existing, true)) {
+        $missingColumns[] = 'ADD COLUMN aangemaakt_door VARCHAR(255) DEFAULT NULL';
+    }
+    if (!in_array('aangemaakt_door_email', $existing, true)) {
+        $missingColumns[] = 'ADD COLUMN aangemaakt_door_email VARCHAR(255) DEFAULT NULL';
+    }
+    if ($missingColumns) {
+        $pdo->exec('ALTER TABLE ritten ' . implode(', ', $missingColumns));
+    }
+
+    $ensured = true;
+}
+
+function validateNieuweRitGegevens(array $rit) {
+    $adres = trim((string)($rit['adres'] ?? ''));
+    if ($adres === '' || !preg_match('/\d/', $adres)) {
+        return 'Vul bij het adres ook een huisnummer in.';
+    }
+
+    $telefoon = preg_replace('/[\s().\/-]+/', '', trim((string)($rit['telefoonnummer'] ?? '')));
+    if (!preg_match('/^(?:0[1-9][0-9]{8}|(?:\+31|0031)[1-9][0-9]{8})$/', $telefoon)) {
+        return 'Vul een geldig Nederlands telefoonnummer in, bijvoorbeeld 06-12345678.';
+    }
+
+    $postcodePlaats = trim((string)($rit['postcodePlaats'] ?? ''));
+    if (!preg_match('/^[1-9][0-9]{3}\s*[A-Za-z]{2}\s*\S.{1,}$/u', $postcodePlaats)) {
+        return 'Vul een volledige postcode en plaats in, bijvoorbeeld 1234AB Plaats.';
+    }
+
+    $email = trim((string)($rit['email'] ?? ''));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return 'Vul een geldig e-mailadres van de contactpersoon in.';
+    }
+
+    return null;
+}
+
 function assertNotMedewerkerRecipient(PDO $pdo, $naam, $email = '') {
     $stmt = $pdo->prepare('SELECT naam FROM chauffeurs WHERE is_medewerker = 1 AND (naam = ? OR email = ?) LIMIT 1');
     $stmt->execute([trim((string)$naam), trim((string)$email)]);
@@ -432,4 +485,58 @@ function magChauffeurRitVrijKiezen(PDO $pdo, $ritId, $chauffeurNaam) {
     }
 
     return isRitVrijBeschikbaar($pdo, $ritId);
+}
+
+const AFSTORT_DOCUMENT_BASE_URL = 'https://nierstichtingnederland.nl/afstort';
+
+function afstort_rit_exists(PDO $pdo, int $ritId): bool {
+    if ($ritId <= 0) {
+        return false;
+    }
+    $stmt = $pdo->prepare('SELECT 1 FROM ritten WHERE id = ?');
+    $stmt->execute([$ritId]);
+    return (bool)$stmt->fetchColumn();
+}
+
+function afstort_document_token(int $ritId, string $document, string $key): string {
+    return hash_hmac('sha256', $document . ':' . $ritId, $key);
+}
+
+function afstort_valid_document_token(int $ritId, string $document, string $token, string $key): bool {
+    return $ritId > 0
+        && preg_match('/^[a-f0-9]{64}$/D', $token) === 1
+        && hash_equals(afstort_document_token($ritId, $document, $key), $token);
+}
+
+function afstort_document_url(int $ritId, string $document, string $key): string {
+    return AFSTORT_DOCUMENT_BASE_URL . '/' . $document . '.php?id=' . $ritId
+        . '&token=' . afstort_document_token($ritId, $document, $key);
+}
+
+function afstort_prepare_document_email(string $body, int $ritId, string $key): string {
+    $body = str_ireplace(
+        [
+            'https://tools.nierstichting.nl/sealbagstorting',
+            'https://nierstichting.nl/sealbagstorting',
+        ],
+        'https://nierstichting.nl/sealbag',
+        $body
+    );
+
+    // Ook bestaande document-URL's in opgeslagen mailtemplates moeten naar deze rit wijzen.
+    $body = preg_replace_callback(
+        '~(?:https?://[^\s"\'<>]+/)?(busbriefje|maakBriefje)\.php(?:\?[^\s"\'<>]*)?~i',
+        static function (array $matches) use ($ritId, $key): string {
+            $document = strcasecmp($matches[1], 'busbriefje') === 0 ? 'busbriefje' : 'maakBriefje';
+            return htmlspecialchars(afstort_document_url($ritId, $document, $key), ENT_QUOTES, 'UTF-8');
+        },
+        $body
+    );
+
+    $links = [
+        '[busbriefje]' => '<a href="' . htmlspecialchars(afstort_document_url($ritId, 'busbriefje', $key), ENT_QUOTES, 'UTF-8') . '" target="_blank">Busbriefje</a>',
+        '[brusbriefje]' => '<a href="' . htmlspecialchars(afstort_document_url($ritId, 'busbriefje', $key), ENT_QUOTES, 'UTF-8') . '" target="_blank">Busbriefje</a>',
+        '[afhaalbevestiging]' => '<a href="' . htmlspecialchars(afstort_document_url($ritId, 'maakBriefje', $key), ENT_QUOTES, 'UTF-8') . '" target="_blank">Afhaalbevestiging</a>',
+    ];
+    return str_ireplace(array_keys($links), array_values($links), $body);
 }

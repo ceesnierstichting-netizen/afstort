@@ -1,5 +1,9 @@
 <?php
+require_once __DIR__ . '/session.php';
 require_once __DIR__ . '/config.php';
+afstort_require_login();
+if (!hasDashboardAccess($_SESSION)) { http_response_code(403); exit('Geen toegang.'); }
+afstort_require_csrf();
 
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
@@ -24,14 +28,12 @@ if(empty($email) || empty($body)){
     exit;
 }
 
-// Voeg de placeholder [wijknaam] toe zodat deze vervangen kan worden
-$placeholders = ['[busbriefje]', '[afhaalbevestiging]', '[wijknaam]'];
-$replacements = [
-    $data['busbriefje_url'] ?? '',
-    $data['afhaalbevestiging_url'] ?? '',
-    $data['wijknaam'] ?? ''
-];
-$body = str_replace($placeholders, $replacements, $body);
+$ritId = (int)($data['ritId'] ?? 0);
+if (!afstort_rit_exists($pdo, $ritId)) {
+    echo json_encode(['status' => 'error', 'message' => 'Rit niet gevonden']);
+    exit;
+}
+$body = afstort_prepare_document_email(str_replace('[wijknaam]', $data['wijknaam'] ?? '', $body), $ritId, $documentLinkKey);
 
 $headers = "From: " . $from . "\r\n" .
            "Reply-To: " . $from . "\r\n" .

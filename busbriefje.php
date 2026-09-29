@@ -1,7 +1,5 @@
 <?php
 // busbriefje.php
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 require_once('config.php');
 
 if (!isset($_GET['id'])) {
@@ -9,13 +7,28 @@ if (!isset($_GET['id'])) {
 }
 
 $id = intval($_GET['id']);
-$stmt = $pdo->prepare("SELECT collectegebied, wijknaam, gebiedsnummer FROM ritten WHERE id = ?");
+$stmt = $pdo->prepare("SELECT collectegebied, wijknaam, gebiedsnummer, chauffeur FROM ritten WHERE id = ?");
 $stmt->execute([$id]);
 $ride = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$ride) {
     die("Rit niet gevonden.");
 }
+$token = (string)($_GET['token'] ?? '');
+if (!afstort_valid_document_token($id, 'busbriefje', $token, $documentLinkKey)) {
+    if ($token !== '') {
+        http_response_code(403);
+        exit('Ongeldige documentlink.');
+    }
+    require_once('session.php');
+    afstort_require_login();
+    if (!hasDashboardAccess($_SESSION) && strcasecmp(trim((string)$ride['chauffeur']), trim((string)$_SESSION['username'])) !== 0) {
+        http_response_code(403);
+        exit('Geen toegang tot deze rit.');
+    }
+}
+header('Cache-Control: private, no-store');
+header('Referrer-Policy: no-referrer');
 ?>
 <!DOCTYPE html>
 <html lang="nl">

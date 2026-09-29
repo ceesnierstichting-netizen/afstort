@@ -1,10 +1,12 @@
 <?php
 // declineRit.php - gebruikt echte km-afstand om volgende chauffeur te kiezen
 
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
+require_once "session.php";
 require_once "config.php";
+afstort_require_login();
 
 function haversineDistanceKm($lat1, $lon1, $lat2, $lon2) {
     $earthRadiusKm = 6371.0;
@@ -42,6 +44,21 @@ if (!$ritId || $chauffeurNaam === '') {
     echo "Onjuiste link. (Geen rit of chauffeur doorgegeven.)";
     exit;
 }
+$offerCheck = $pdo->prepare("SELECT 1 FROM rit_aanbiedingen WHERE rit_id = ? AND status = 'aangeboden' AND LOWER(TRIM(chauffeur_naam)) = LOWER(TRIM(?)) LIMIT 1");
+$offerCheck->execute([$ritId, $chauffeurNaam]);
+if (strcasecmp($chauffeurNaam, (string)$_SESSION['username']) !== 0 || !$offerCheck->fetchColumn()) {
+    http_response_code(403);
+    exit('Deze rit is niet aan jouw account aangeboden.');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    echo '<!doctype html><html lang="nl"><meta charset="utf-8"><title>Rit afwijzen</title><body>';
+    echo '<h1>Rit afwijzen</h1><p>Wil je deze rit afwijzen?</p>';
+    echo '<form method="post" action="declineRit.php?rit=' . urlencode((string)$ritId) . '&amp;chauffeur=' . urlencode($chauffeurNaam) . '">';
+    echo '<input type="hidden" name="csrf" value="' . htmlspecialchars(afstort_csrf_token(), ENT_QUOTES) . '">';
+    echo '<button type="submit">Ja, wijs de rit af</button></form></body></html>';
+    exit;
+}
+afstort_require_csrf();
 
 markeerRitAanbiedingAfgewezen($pdo, $ritId, $chauffeurNaam);
 
@@ -179,26 +196,10 @@ $body = "Beste " . htmlspecialchars($newName) . ",<br><br>"
       . "<a href='" . htmlspecialchars($declineLink, ENT_QUOTES) . "'>Ik kan deze rit niet uitvoeren</a>."
       . "<br><br>Met vriendelijke groet,<br>Nierstichting collectieteam";
 
-// Mail versturen via sendBasisemail.php
-$mailPayload = json_encode(array(
-    'email'   => $newEmail,
-    'subject' => 'Afhaalopdracht collecte-opbrengst (nieuwe chauffeur)',
-    'body'    => $body,
-    'van'     => 'noreply@nierstichtingnederland.nl',
-    'ritId'   => $ritId,
-    'emailType' => 'Chauffeurvoorstel na afwijzing'
-));
-
-$optsMail = array(
-    'http' => array(
-        'method'  => 'POST',
-        'header'  => "Content-Type: application/json\r\n",
-        'content' => $mailPayload
-    )
-);
-
-$mailResponse = @file_get_contents("https://nierstichtingnederland.nl/afstort/sendBasisemail.php", false, stream_context_create($optsMail));
-// Mailfout negeren voor de gebruiker; in log kun je 'm terugvinden als dat nodig is.
+$subject = 'Afhaalopdracht collecte-opbrengst (nieuwe chauffeur)';
+$headers = "From: noreply@nierstichtingnederland.nl\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n";
+$mailSent = mail($newEmail, $subject, $body, $headers);
+logRitEmail($pdo, $ritId, 'Chauffeurvoorstel na afwijzing', $newEmail, $subject, $mailSent ? 'verzonden' : 'mislukt');
 registreerRitAanbieding($pdo, $ritId, $newName, $newEmail, $nearestScore);
 ?>
 <!DOCTYPE html>

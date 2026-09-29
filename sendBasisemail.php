@@ -1,5 +1,12 @@
 <?php
+require_once __DIR__ . '/session.php';
 require_once __DIR__ . '/config.php';
+afstort_require_login();
+if (!hasDashboardAccess($_SESSION)) {
+    http_response_code(403);
+    exit('Geen toegang.');
+}
+afstort_require_csrf();
 
 ob_start();
 ini_set('display_errors', 0);
@@ -18,33 +25,21 @@ if (!$data) {
 $email   = $data['email'] ?? '';
 $subject = $data['subject'] ?? '';
 $body    = $data['body'] ?? '';
-$from    = $data['van'] ?? '';
+$from    = 'noreply@nierstichtingnederland.nl';
 
-if(empty($email) || empty($subject) || empty($body)){
+if (!filter_var($email, FILTER_VALIDATE_EMAIL) || empty($subject) || empty($body) || preg_match('/[\r\n]/', (string)$subject)) {
     ob_clean();
     echo json_encode(['status' => 'error', 'message' => 'Ontbrekende vereiste velden']);
     exit;
 }
 
-// Zorg ervoor dat de JSON-velden 'busbriefje' en 'afhaalbevestiging' de volledige URL's bevatten.
-$busBriefjeUrl = $data['busbriefje'] ?? '';
-$afhaalBevestigingUrl = $data['afhaalbevestiging'] ?? '';
-
-// Bouw de HTML-links met dubbele aanhalingstekens in de attributen
-$busBriefjeLink = $busBriefjeUrl !== '' ? "<a href=\"{$busBriefjeUrl}\" target=\"_blank\">busbriefje</a>" : "";
-$afhaalBevestigingLink = $afhaalBevestigingUrl !== '' ? "<a href=\"{$afhaalBevestigingUrl}\" target=\"_blank\">afhaalbevestiging</a>" : "";
-
-// Definieer de placeholders en de vervangingswaarden
-$placeholders = ['[naam]', '[soort]', '[verwacht]', '[busbriefje]', '[afhaalbevestiging]'];
-$replacements = [
-    $data['naam'] ?? '',
-    $data['soort'] ?? '',
-    $data['verwacht'] ?? '',
-    $busBriefjeLink,
-    $afhaalBevestigingLink
-];
-
-$body = str_replace($placeholders, $replacements, $body);
+$ritId = (int)($data['ritId'] ?? 0);
+if (!afstort_rit_exists($pdo, $ritId)) {
+    ob_clean();
+    echo json_encode(['status' => 'error', 'message' => 'Rit niet gevonden']);
+    exit;
+}
+$body = afstort_prepare_document_email($body, $ritId, $documentLinkKey);
 
 $headers = "From: " . $from . "\r\n" .
            "Reply-To: " . $from . "\r\n" .

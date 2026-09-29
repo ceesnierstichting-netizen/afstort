@@ -1,10 +1,6 @@
 <?php
 // maakBriefje.php
 
-// Sessies niet starten en geen inlogcontrole uitvoeren zodat de pagina publiek toegankelijk is.
-// Indien gewenst kun je hier extra controle toevoegen (bijvoorbeeld een token of een hash) om misbruik te voorkomen.
-
-//require_once('config.php'); // Zorg ervoor dat je $pdo en andere config-variabelen nog steeds nodig hebt.
 require_once('config.php');
 
 // Helperfuncties voor datum- en tijdopmaak
@@ -28,12 +24,28 @@ if (isset($_GET['id'])) {
     if (!$data) {
         die("Geen rit gevonden met het opgegeven ID.");
     }
+    $token = (string)($_GET['token'] ?? '');
+    if (!afstort_valid_document_token((int)$id, 'maakBriefje', $token, $documentLinkKey)) {
+        if ($token !== '') {
+            http_response_code(403);
+            exit('Ongeldige documentlink.');
+        }
+        require_once('session.php');
+        afstort_require_login();
+        if (!hasDashboardAccess($_SESSION) && strcasecmp(trim((string)($data['chauffeur'] ?? '')), trim((string)$_SESSION['username'])) !== 0) {
+            http_response_code(403);
+            exit('Geen toegang tot deze rit.');
+        }
+    }
 } else {
     die("Geen rit ID opgegeven. Geef bijvoorbeeld in de URL: maakBriefje.php?id=123");
 }
+header('Cache-Control: private, no-store');
+header('Referrer-Policy: no-referrer');
 
 // Bepaal het gecombineerde veld voor Collectegebied en Wijknaam
 $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? ''));
+$gebiedsnummer = trim((string)($data['gebiedsnummer'] ?? ''));
 ?>
 <!DOCTYPE html>
 <html lang="nl">
@@ -142,7 +154,7 @@ $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? '')
     <!-- Kopie 1: Briefje 1 (links) -->
     <div class="form-section">
       <h2>Bevestiging afhaal<br>collecte-opbrengst</h2>
-      <div class="field"><label>Collectegebied:</label> <?php echo htmlspecialchars($collecteEnWijk); ?></div>
+      <div class="field"><label>Collectegebied:</label> <?php echo htmlspecialchars($collecteEnWijk); ?><?php if ($gebiedsnummer !== ''): ?> <strong>(<?php echo htmlspecialchars($gebiedsnummer); ?>)</strong><?php endif; ?></div>
       <div class="field"><label>Contactpersoon:</label> <?php echo htmlspecialchars($data['contactpersoon']); ?></div>
       <div class="field"><label>Adres:</label> <?php echo htmlspecialchars($data['adres']); ?></div>
       <div class="field"><label>Postcode/Plaats:</label> <?php echo htmlspecialchars($data['postcodePlaats']); ?></div>
@@ -188,7 +200,7 @@ $collecteEnWijk = trim($data['collectegebied'] . ' ' . ($data['wijknaam'] ?? '')
     <!-- Kopie 2: Briefje 2 (rechts) -->
     <div class="form-section">
       <h2>Bevestiging afhaal<br>collecte-opbrengst</h2>
-      <div class="field"><label>Collectegebied:</label> <?php echo htmlspecialchars($collecteEnWijk); ?></div>
+      <div class="field"><label>Collectegebied:</label> <?php echo htmlspecialchars($collecteEnWijk); ?><?php if ($gebiedsnummer !== ''): ?> <strong>(<?php echo htmlspecialchars($gebiedsnummer); ?>)</strong><?php endif; ?></div>
       <div class="field"><label>Contactpersoon:</label> <?php echo htmlspecialchars($data['contactpersoon']); ?></div>
       <div class="field"><label>Adres:</label> <?php echo htmlspecialchars($data['adres']); ?></div>
       <div class="field"><label>Postcode/Plaats:</label> <?php echo htmlspecialchars($data['postcodePlaats']); ?></div>
