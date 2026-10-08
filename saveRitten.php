@@ -6,6 +6,9 @@ require_once('session.php');
 require_once('config.php');
 
 refreshCurrentUserAccess($pdo);
+require_once __DIR__ . '/portal_settings.php';
+portal_settings_schema($pdo);
+$portalSettings = portal_settings($pdo);
 
 // Zorg dat de gebruiker via 2FA is ingelogd
 if (!isset($_SESSION['fullAccess']) || empty($_SESSION['twofa_verified'])) {
@@ -50,6 +53,13 @@ function resolveCoordinatesForSavedRit($postcodePlaats) {
 foreach ($data as $rit) {
     try {
         assertNotMedewerkerRecipient($pdo, $rit['chauffeur'] ?? '');
+        if (!empty($rit['id']) && !empty($rit['__dirty']) && ($rit['status'] ?? '-') !== 'Afgehandeld' && !hasAdminPermissions($_SESSION)) {
+            $statusQuery = $pdo->prepare('SELECT status FROM ritten WHERE id = ?');
+            $statusQuery->execute([(int)$rit['id']]);
+            if ($statusQuery->fetchColumn() === 'Afgehandeld') {
+                throw new RuntimeException('Alleen een Admin mag een afgeronde rit heropenen.');
+            }
+        }
     } catch (RuntimeException $e) {
         http_response_code(422);
         echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
@@ -139,6 +149,7 @@ foreach ($data as $i => $rit) {
             lon                  = :lon,
             telefoonnummer       = :telefoonnummer,
             email                = :email,
+            opmerking            = :opmerking,
             voorkeurAfhaalmoment = :voorkeurAfhaalmoment,
             verwachtBedrag       = :verwachtBedrag,
             soort                = :soort,
@@ -160,6 +171,7 @@ foreach ($data as $i => $rit) {
             ':lon'                  => $lon,
             ':telefoonnummer'       => $rit['telefoonnummer'],
             ':email'                => $rit['email'],
+            ':opmerking'            => trim((string)($rit['opmerking'] ?? '')),
             ':voorkeurAfhaalmoment' => $rit['voorkeurAfhaalmoment'] ?? '',
             ':verwachtBedrag'       => $rit['verwachtBedrag'] ?? '',
             ':soort'                => $rit['soort'],
@@ -197,13 +209,13 @@ foreach ($data as $i => $rit) {
             exit;
         }
         $stmt = $pdo->prepare("INSERT INTO ritten (
-            collectegebied, gebiedsnummer, wijknaam, contactpersoon, adres, postcodePlaats, lat, lon, telefoonnummer, email,
+            collectegebied, gebiedsnummer, wijknaam, contactpersoon, adres, postcodePlaats, lat, lon, telefoonnummer, email, opmerking,
             voorkeurAfhaalmoment, verwachtBedrag, soort, chauffeur, afhaalmoment, afhaaltijd, gestort, status, gereden,
-            aangemaakt_door, aangemaakt_door_email
+            aangemaakt_door, aangemaakt_door_email, collectejaar
             ) VALUES (
-            :collectegebied, :gebiedsnummer, :wijknaam, :contactpersoon, :adres, :postcodePlaats, :lat, :lon, :telefoonnummer, :email,
+            :collectegebied, :gebiedsnummer, :wijknaam, :contactpersoon, :adres, :postcodePlaats, :lat, :lon, :telefoonnummer, :email, :opmerking,
             :voorkeurAfhaalmoment, :verwachtBedrag, :soort, :chauffeur, :afhaalmoment, :afhaaltijd, :gestort, :status, :gereden,
-            :aangemaakt_door, :aangemaakt_door_email
+            :aangemaakt_door, :aangemaakt_door_email, :collectejaar
             )");
         $result = $stmt->execute([
             ':collectegebied'       => $rit['collectegebied'],
@@ -216,6 +228,7 @@ foreach ($data as $i => $rit) {
             ':lon'                  => $lon,
             ':telefoonnummer'       => $rit['telefoonnummer'],
             ':email'                => $rit['email'],
+            ':opmerking'            => trim((string)($rit['opmerking'] ?? '')),
             ':voorkeurAfhaalmoment' => $rit['voorkeurAfhaalmoment'] ?? '',
             ':verwachtBedrag'       => $rit['verwachtBedrag'] ?? '',
             ':soort'                => $rit['soort'],
@@ -226,7 +239,8 @@ foreach ($data as $i => $rit) {
             ':status'               => $rit['status'],
             ':gereden'              => $gereden,
             ':aangemaakt_door'      => $_SESSION['username'] ?? null,
-            ':aangemaakt_door_email'=> $_SESSION['user_email'] ?? null
+            ':collectejaar'=> $portalSettings['currentYear'],
+                        ':aangemaakt_door_email'=> $_SESSION['user_email'] ?? null
         ]);
         if (!$result) {
             error_log("Insert Error: " . print_r($stmt->errorInfo(), true));

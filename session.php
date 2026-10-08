@@ -62,7 +62,7 @@ if ($isAuthenticatedSession) {
     if (($now - $lastActivity) > AFSTORT_IDLE_TIMEOUT_SECONDS) {
         $currentScript = basename($_SERVER['SCRIPT_NAME'] ?? '');
         $isJsonRequest = isset($_GET['action'])
-            || in_array($currentScript, ['saveRitten.php', 'saveChauffeurs.php'], true);
+            || in_array($currentScript, ['saveRitten.php', 'saveChauffeurs.php', 'sendBevestigingContact.php', 'sendBevestigingChauffeur.php'], true);
 
         afstort_destroy_current_session();
 

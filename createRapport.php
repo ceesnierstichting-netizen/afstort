@@ -9,6 +9,9 @@ if (!isset($_SESSION['username']) || empty($_SESSION['twofa_verified'])) {
 
 require_once('config.php');
 refreshCurrentUserAccess($pdo);
+require_once __DIR__ . '/portal_settings.php';
+portal_settings_schema($pdo);
+$portalSettings = portal_settings($pdo);
 
 $fullAccess = !empty($_SESSION['fullAccess']);
 $username   = $_SESSION['username'];
@@ -72,7 +75,7 @@ if (!$fullAccess) {
         foreach ($ritten as $rit) {
             $gestort    = floatval($rit['gestort']);
             $kilometers = floatval($rit['gereden']);
-            $declarabel = $kilometers * 0.3;
+            $declarabel = $kilometers * (float)$portalSettings['years'][$rit['collectejaar']]['kilometervergoeding'];
             $totalGestort   += $gestort;
             $totalKilometers += $kilometers;
             $totalDeclarabel += $declarabel;
@@ -130,7 +133,7 @@ if (!$fullAccess) {
             foreach ($rittenChauffeur as $rit) {
                 $gestort    = floatval($rit['gestort']);
                 $kilometers = floatval($rit['gereden']);
-                $declarabel = $kilometers * 0.3;
+                $declarabel = $kilometers * (float)$portalSettings['years'][$rit['collectejaar']]['kilometervergoeding'];
                 $totalGestort   += $gestort;
                 $totalKilometers += $kilometers;
                 $totalDeclarabel += $declarabel;

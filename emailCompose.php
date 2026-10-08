@@ -79,6 +79,7 @@ if ($templateId == 6) {
 }
 
 $emailBody = str_replace($placeholders, $replacements, $emailBody);
+$emailBody = afstort_replace_opmerking($emailBody, (string)($rit['opmerking'] ?? ''));
 
 // Vaste waarden voor de overige velden
 $vanEmail = "noreply@nierstichtingnederland.nl";

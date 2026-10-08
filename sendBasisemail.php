@@ -40,6 +40,7 @@ if (!afstort_rit_exists($pdo, $ritId)) {
     exit;
 }
 $body = afstort_prepare_document_email($body, $ritId, $documentLinkKey);
+$body = afstort_rit_opmerking_email($pdo, $body, $ritId);
 
 $headers = "From: " . $from . "\r\n" .
            "Reply-To: " . $from . "\r\n" .

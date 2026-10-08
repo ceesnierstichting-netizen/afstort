@@ -3,6 +3,7 @@
 
 require_once('session.php');
 require_once('config.php');
+require_once __DIR__ . '/rit_concurrency.php';
 
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
@@ -13,31 +14,21 @@ if (!isset($_SESSION['username']) || empty($_SESSION['twofa_verified'])) {
 }
 
 refreshCurrentUserAccess($pdo);
+// Existing API routes remain available to the new portal.
+if (!isset($_GET['action'])) {
+    header('Cache-Control: no-store');
+    header('Location: index2.php');
+    exit;
+}
+require_once __DIR__ . '/portal_settings.php';
+portal_settings_schema($pdo);
+$portalSettings = portal_settings($pdo);
 
 $fullAccess = !empty($_SESSION['fullAccess']);
 $canAdmin = hasAdminPermissions($_SESSION);
 $canViewEmailRapport = canViewEmailRapport($_SESSION);
 $_SESSION['medewerker_csrf'] = $_SESSION['medewerker_csrf'] ?? bin2hex(random_bytes(32));
 $username   = $_SESSION['username'] ?? '';
-
-if (isset($_GET['view']) && !isset($_GET['action'])) {
-    $requestedView = $_GET['view'] === 'desktop' ? 'desktop' : 'mobile';
-
-    if ($requestedView === 'mobile' && !$fullAccess) {
-        header("Location: driver_mobile.php");
-        exit();
-    }
-
-    if ($requestedView === 'desktop') {
-        header("Location: index.php");
-        exit();
-    }
-}
-
-if (!isset($_GET['action']) && shouldUseMobileDriverView($fullAccess)) {
-    header("Location: driver_mobile.php");
-    exit();
-}
 
 function resolveCoordinatesFromPostcodeInput($postcodeValue) {
     $postcodeValue = trim((string)$postcodeValue);
@@ -196,6 +187,10 @@ if (isset($_GET['action'])) {
             $stmt->execute();
             $ritten = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
+        $ritten = array_values(array_filter($ritten, function ($rit) use ($portalSettings) { return (int)$rit['collectejaar'] === (int)$portalSettings['currentYear']; }));
+        foreach ($ritten as &$loadedRit) $loadedRit['__version'] = ritVersion($loadedRit);
+        unset($loadedRit);
+        header('Cache-Control: no-store');
         echo json_encode($ritten);
         exit();
     } elseif ($action === 'saveRitten') {
@@ -208,8 +203,12 @@ if (isset($_GET['action'])) {
                 $ritten = [];
             }
 
+            ensureRitAanbiedingenTable($pdo);
+            $pdo->beginTransaction();
+            // Lock and validate the entire batch before making any change.
+            ritCheckVersions($pdo, $ritten);
             $stmtLoadRitGeo = $pdo->prepare("SELECT postcodePlaats, lat, lon FROM ritten WHERE id = :id");
-            $stmtLoadExistingRit = $pdo->prepare("SELECT chauffeur, contactpersoon FROM ritten WHERE id = :id");
+            $stmtLoadExistingRit = $pdo->prepare("SELECT chauffeur, contactpersoon, status FROM ritten WHERE id = :id");
             $ids = [];
             $alerts = [];
             foreach ($ritten as $i => $rit) {
@@ -222,6 +221,7 @@ if (isset($_GET['action'])) {
                 $postcodePlaats = trim($rit['postcodePlaats'] ?? '');
                 $telefoonnummer = trim($rit['telefoonnummer'] ?? '');
                 $email = trim($rit['email'] ?? '');
+                $opmerking = trim((string)($rit['opmerking'] ?? ''));
                 $voorkeurAfhaalmoment = trim($rit['voorkeurAfhaalmoment'] ?? '');
                 $verwachtBedrag = trim((string)($rit['verwachtBedrag'] ?? ''));
                 $soort = trim($rit['soort'] ?? 'munt- en briefgeld');
@@ -246,6 +246,7 @@ if (isset($_GET['action'])) {
                     $postcodePlaats === '' &&
                     $telefoonnummer === '' &&
                     $email === '' &&
+                    $opmerking === '' &&
                     $voorkeurAfhaalmoment === '' &&
                     $verwachtBedrag === '' &&
                     $afhaalmoment === '' &&
@@ -268,6 +269,9 @@ if (isset($_GET['action'])) {
                     $stmtLoadExistingRit->execute([':id' => $rit['id']]);
                     $existingRitForRights = $stmtLoadExistingRit->fetch(PDO::FETCH_ASSOC);
                     $existingChauffeur = trim((string)($existingRitForRights['chauffeur'] ?? ''));
+                    if (($existingRitForRights['status'] ?? '') === 'Afgehandeld' && $status !== 'Afgehandeld' && !$canAdmin) {
+                        throw new RuntimeException('Alleen een Admin mag een afgeronde rit heropenen.');
+                    }
 
                     if (!$fullAccess) {
                         $isExistingForUser = strcasecmp($existingChauffeur, $username) === 0;
@@ -321,6 +325,7 @@ if (isset($_GET['action'])) {
                         lon = :lon,
                         telefoonnummer = :telefoonnummer,
                         email = :email,
+                        opmerking = :opmerking,
                         voorkeurAfhaalmoment = :voorkeurAfhaalmoment,
                         verwachtBedrag = :verwachtBedrag,
                         soort = :soort,
@@ -342,6 +347,7 @@ if (isset($_GET['action'])) {
                         ':lon'                  => $lon,
                         ':telefoonnummer'       => $telefoonnummer,
                         ':email'                => $email,
+                        ':opmerking'            => $opmerking,
                         ':voorkeurAfhaalmoment' => $voorkeurAfhaalmoment,
                         ':verwachtBedrag'       => $verwachtBedrag,
                         ':soort'                => $soort,
@@ -373,13 +379,13 @@ if (isset($_GET['action'])) {
                         throw new RuntimeException($validationError);
                     }
                     $stmt = $pdo->prepare("INSERT INTO ritten (
-                        collectegebied, wijknaam, gebiedsnummer, contactpersoon, adres, postcodePlaats, lat, lon, telefoonnummer, email,
+                        collectegebied, wijknaam, gebiedsnummer, contactpersoon, adres, postcodePlaats, lat, lon, telefoonnummer, email, opmerking,
                         voorkeurAfhaalmoment, verwachtBedrag, soort, chauffeur, afhaalmoment, afhaaltijd, gestort, gereden, status,
-                        aangemaakt_door, aangemaakt_door_email
+                        aangemaakt_door, aangemaakt_door_email, collectejaar
                         ) VALUES (
-                        :collectegebied, :wijknaam, :gebiedsnummer, :contactpersoon, :adres, :postcodePlaats, :lat, :lon, :telefoonnummer, :email,
+                        :collectegebied, :wijknaam, :gebiedsnummer, :contactpersoon, :adres, :postcodePlaats, :lat, :lon, :telefoonnummer, :email, :opmerking,
                         :voorkeurAfhaalmoment, :verwachtBedrag, :soort, :chauffeur, :afhaalmoment, :afhaaltijd, :gestort, :gereden, :status,
-                        :aangemaakt_door, :aangemaakt_door_email
+                        :aangemaakt_door, :aangemaakt_door_email, :collectejaar
                         )");
                     $stmt->execute([
                         ':collectegebied'       => $collectegebied,
@@ -392,6 +398,7 @@ if (isset($_GET['action'])) {
                         ':lon'                  => $lon,
                         ':telefoonnummer'       => $telefoonnummer,
                         ':email'                => $email,
+                        ':opmerking'            => $opmerking,
                         ':voorkeurAfhaalmoment' => $voorkeurAfhaalmoment,
                         ':verwachtBedrag'       => $verwachtBedrag,
                         ':soort'                => $soort,
@@ -402,14 +409,30 @@ if (isset($_GET['action'])) {
                         ':gereden'              => $gereden,
                         ':status'               => $status,
                         ':aangemaakt_door'      => $username,
+                        ':collectejaar'=> $portalSettings['currentYear'],
                         ':aangemaakt_door_email'=> $_SESSION['user_email'] ?? null
                     ]);
                     $ids[$i] = $pdo->lastInsertId();
                 }
             }
 
-            echo json_encode(['status' => 'ok', 'ids' => $ids, 'alerts' => $alerts]);
+            $versions = [];
+            $versionQuery = $pdo->prepare('SELECT * FROM ritten WHERE id = ?');
+            foreach ($ids as $i => $id) {
+                if (!empty($ritten[$i]['id']) && empty($ritten[$i]['__dirty'])) continue;
+                $versionQuery->execute([$id]);
+                $savedRit = $versionQuery->fetch(PDO::FETCH_ASSOC);
+                if ($savedRit) $versions[$i] = ritVersion($savedRit);
+            }
+            $pdo->commit();
+            echo json_encode(['status' => 'ok', 'ids' => $ids, 'versions' => $versions, 'alerts' => $alerts]);
         } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            if ($e instanceof RitConflict) {
+                http_response_code(409);
+                echo json_encode(['status'=>'error', 'message'=>$e->getMessage()]);
+                exit;
+            }
             $isValidationError = $e instanceof RuntimeException;
             http_response_code($isValidationError ? 422 : 500);
             if (!$isValidationError) {
@@ -482,11 +505,11 @@ if (isset($_GET['action'])) {
     } elseif ($action === 'loadChauffeurs') {
         header('Content-Type: application/json');
         if (!$fullAccess) {
-            $stmt = $pdo->prepare("SELECT id, naam, email, postcode, is_medewerker FROM chauffeurs WHERE naam = :username");
+            $stmt = $pdo->prepare("SELECT id, naam, email, postcode, mobiel, beschikbare_jaren, is_medewerker FROM chauffeurs WHERE naam = :username");
             $stmt->execute([':username' => $username]);
         } else {
             $stmt = $pdo->prepare("
-                SELECT id, naam, email, postcode, is_medewerker
+                SELECT id, naam, email, postcode, mobiel, beschikbare_jaren, is_medewerker
                 FROM chauffeurs
                 WHERE (is_medewerker = 0 OR (is_medewerker = 1 AND LOWER(TRIM(naam)) = LOWER(:uitzondering)))
                   AND naam <> 'Admin'
@@ -494,7 +517,15 @@ if (isset($_GET['action'])) {
             ");
             $stmt->execute([':uitzondering' => SELECTABLE_MEDEWERKER_CHAUFFEUR]);
         }
-        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+        require_once __DIR__ . '/postcode_places.php';
+        $chauffeurs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($chauffeurs as &$chauffeur) {
+            $chauffeur['woonplaats'] = chauffeurWoonplaats($chauffeur['postcode'] ?? '');
+            $chauffeur['actief_jaar'] = (int)$portalSettings['currentYear'];
+            $chauffeur['actief'] = in_array($chauffeur['actief_jaar'], json_decode($chauffeur['beschikbare_jaren'] ?? '[]', true) ?: [], true);
+        }
+        unset($chauffeur);
+        echo json_encode($chauffeurs);
         exit();
         
     } elseif ($action === 'addChauffeur') {
@@ -508,6 +539,8 @@ if (isset($_GET['action'])) {
         $naam = trim($data['chauffeur']);
         $email = normalizeOptionalEmail($data['email'] ?? '');
         $iban = normalizeOptionalIban($data['IBAN'] ?? '');
+        try { $mobiel = chauffeur_mobiel($data['mobiel'] ?? ''); }
+        catch (InvalidArgumentException $e) { http_response_code(422); exit($e->getMessage()); }
         $wachtwoordInput = trim($data['wachtwoord'] ?? '');
 
         if ($naam === "") {
@@ -542,9 +575,11 @@ if (isset($_GET['action'])) {
         list($lat, $lon) = resolveCoordinatesFromPostcodeInput($postcode);
 
         try {
-            $stmt = $pdo->prepare("INSERT INTO chauffeurs (naam, email, wachtwoord, IBAN, postcode, lat, lon) VALUES (:naam, :email, :wachtwoord, :IBAN, :postcode, :lat, :lon)");
+            $stmt = $pdo->prepare("INSERT INTO chauffeurs (naam, email, wachtwoord, IBAN, postcode, lat, lon, mobiel, beschikbare_jaren) VALUES (:naam, :email, :wachtwoord, :IBAN, :postcode, :lat, :lon, :mobiel, :jaren)");
             if ($stmt->execute([
                 ':naam'       => $naam,
+                ':mobiel'     => $mobiel,
+                ':jaren'      => json_encode(!empty($data['active']) ? [(int)$portalSettings['currentYear']] : []),
                 ':email'      => $email,
                 ':wachtwoord' => $wachtwoord,
                 ':IBAN'       => $iban,
@@ -921,12 +956,6 @@ if (isset($_GET['action'])) {
       line-height: 1.2;
     }
 
-    #chauffeur-section .form-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-      gap: 10px;
-    }
-
     table {
       width: 100%;
       border-collapse: collapse;
@@ -985,6 +1014,47 @@ if (isset($_GET['action'])) {
 
     #add-rit-button:hover {
       background-color: #166534;
+    }
+
+    /* Use the same explicit grid for the header and every data row.
+       Late-inserted elements cannot change the browser's table column calculation. */
+    #transport-overzicht table {
+      display: block;
+      min-width: 1140px;
+    }
+    #transport-overzicht thead,
+    #transport-overzicht tbody {
+      display: block;
+    }
+    #transport-overzicht tr {
+      display: grid;
+      grid-template-columns: minmax(190px, 1.8fr) minmax(125px, 1.2fr) minmax(105px, 1fr) minmax(100px, 1fr) minmax(110px, 1.1fr) minmax(125px, 1.2fr) minmax(95px, .9fr) minmax(95px, .9fr) minmax(105px, 1fr) minmax(95px, .9fr);
+    }
+    #transport-overzicht th[data-column],
+    #transport-overzicht td[data-column] {
+      display: block;
+      grid-row: 1;
+      min-width: 0;
+      max-width: none;
+    }
+    #transport-overzicht [data-column="contact"] { grid-column: 1; }
+    #transport-overzicht [data-column="voorkeurAfhaalmoment"] { grid-column: 2; }
+    #transport-overzicht [data-column="verwachtBedrag"] { grid-column: 3; }
+    #transport-overzicht [data-column="soort"] { grid-column: 4; }
+    #transport-overzicht [data-column="chauffeur"] { grid-column: 5; }
+    #transport-overzicht [data-column="afhaalmoment"] { grid-column: 6; }
+    #transport-overzicht [data-column="afhaaltijd"] { grid-column: 7; }
+    #transport-overzicht [data-column="gestort"] { grid-column: 8; }
+    #transport-overzicht [data-column="gereden"] { grid-column: 9; }
+    #transport-overzicht [data-column="status"] { grid-column: 10; }
+    #tableBody td[colspan] { grid-column: 1 / -1; }
+
+    /* Autofill extensions can insert non-cell elements into a row.
+       Browsers give those elements anonymous table cells, shifting every field. */
+    #tableBody > :not(tr),
+    #tableBody > tr > :not(td),
+    #tableBody > tr > td:not([data-column]):not([colspan]) {
+      display: none !important;
     }
 
     .ritten-heading {
@@ -1197,6 +1267,9 @@ if (isset($_GET['action'])) {
       min-height: 220px;
       resize: vertical;
     }
+    textarea[data-field="opmerking"], #new-rit-opmerking {
+      min-height: 54px;
+    }
 
     #sendEmailOverlay,
     #confirmRitModal,
@@ -1294,7 +1367,8 @@ if (isset($_GET['action'])) {
       z-index: 3000;
     }
 
-    #medewerker-dialog {
+    #medewerker-dialog,
+    #chauffeur-dialog {
       box-sizing: border-box;
       width: min(560px, calc(100vw - 32px));
       max-width: none;
@@ -1308,12 +1382,13 @@ if (isset($_GET['action'])) {
       background: #fff;
     }
 
-    #medewerker-dialog::backdrop { background: rgba(15, 23, 42, 0.45); }
-    #medewerker-dialog h2 { margin: 0 0 12px; font-size: 1.5rem; }
-    #medewerker-dialog .medewerker-intro { margin: 0 0 28px; line-height: 1.6; color: #526174; }
-    #medewerker-dialog .medewerker-field { margin-bottom: 22px; }
-    #medewerker-dialog label { display: block; margin-bottom: 9px; font-size: 1rem; font-weight: 600; }
-    #medewerker-dialog input {
+    #medewerker-dialog::backdrop,
+    #chauffeur-dialog::backdrop { background: rgba(15, 23, 42, 0.45); }
+    #medewerker-dialog h2, #chauffeur-dialog h2 { margin: 0 0 12px; font-size: 1.5rem; }
+    .account-dialog .account-intro { margin: 0 0 28px; line-height: 1.6; color: #526174; }
+    .account-dialog .account-field { margin-bottom: 22px; }
+    .account-dialog label { display: block; margin-bottom: 9px; font-size: 1rem; font-weight: 600; }
+    .account-dialog input {
       display: block;
       box-sizing: border-box;
       width: 100%;
@@ -1327,19 +1402,19 @@ if (isset($_GET['action'])) {
       font-size: 16px;
       line-height: 1.4;
     }
-    #medewerker-dialog input:focus { outline: 3px solid #dbeafe; outline-offset: 1px; border-color: #1769c2; }
-    #medewerker-dialog .medewerker-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
-    #medewerker-dialog button { min-height: 46px; padding: 12px 20px; margin: 0; font-size: 0.95rem; }
-    #medewerker-dialog .medewerker-submit { background: #1769c2; color: #fff; }
-    #medewerker-dialog .medewerker-submit:hover { background: #12549c; }
-    #medewerker-dialog .medewerker-close { background: #eef2f6; color: #334155; }
-    #medewerker-dialog .medewerker-close:hover { background: #e2e8f0; }
-    #medewerker-dialog button:disabled { opacity: 0.6; cursor: wait; transform: none; }
-    #medewerker-result:empty { display: none; }
-    #medewerker-result { line-height: 1.5; margin: 16px 0 0; }
+    .account-dialog input:focus { outline: 3px solid #dbeafe; outline-offset: 1px; border-color: #1769c2; }
+    .account-dialog .account-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+    .account-dialog button { min-height: 46px; padding: 12px 20px; margin: 0; font-size: 0.95rem; }
+    .account-dialog .account-submit { background: #1769c2; color: #fff; }
+    .account-dialog .account-submit:hover { background: #12549c; }
+    .account-dialog .account-close { background: #eef2f6; color: #334155; }
+    .account-dialog .account-close:hover { background: #e2e8f0; }
+    .account-dialog button:disabled { opacity: 0.6; cursor: wait; transform: none; }
+    .account-dialog [role="status"]:empty { display: none; }
+    .account-dialog [role="status"] { line-height: 1.5; margin: 16px 0 0; }
     @media (max-width: 480px) {
-      #medewerker-dialog { padding: 24px; }
-      #medewerker-dialog .medewerker-actions button { flex: 1 1 100%; }
+      .account-dialog { padding: 24px; }
+      .account-dialog .account-actions button { flex: 1 1 100%; }
     }
 
     .no-spinner::-webkit-inner-spin-button,
@@ -1372,7 +1447,7 @@ if (isset($_GET['action'])) {
     </div>
 
     <div id="notification"></div>
-    <h1>Afstortverzoeken 2026</h1>
+    <h1>Afstortverzoeken <?= (int)$portalSettings['currentYear'] ?></h1>
 
     <?php if ($fullAccess): ?>
     <section id="chauffeur-section" class="card">
@@ -1383,15 +1458,8 @@ if (isset($_GET['action'])) {
       <div id="chauffeurs-panel" class="user-panel" role="tabpanel" aria-labelledby="chauffeurs-tab">
         <ul id="chauffeurList"></ul>
         <?php if ($canAdmin): ?>
-        <div class="form-grid">
-          <input type="text" id="newChauffeur" placeholder="Naam">
-          <input type="text" id="newChauffeurPostcode" placeholder="Postcode">
-          <input type="email" id="newChauffeurEmail" placeholder="E-mail">
-          <input type="text" id="newChauffeurIBAN" placeholder="IBAN">
-          <input type="password" id="newChauffeurPassword" placeholder="Wachtwoord (8k/1getal/1leesteken)">
-        </div>
         <div class="user-panel-actions">
-          <button id="add-chauffeur-button" onclick="addChauffeur()">Voeg chauffeur toe</button>
+          <button id="add-chauffeur-button" type="button" onclick="document.getElementById('chauffeur-dialog').showModal()">Voeg chauffeur toe</button>
           <button id="rebuild-geo-button" onclick="rebuildAllGeocodes()">Herbereken lat/lon (ritten + chauffeurs)</button>
         </div>
         <?php endif; ?>
@@ -1408,22 +1476,53 @@ if (isset($_GET['action'])) {
     <?php endif; ?>
 
     <?php if ($canAdmin): ?>
-    <dialog id="medewerker-dialog" aria-labelledby="medewerker-title" aria-describedby="medewerker-intro">
+    <dialog id="chauffeur-dialog" class="account-dialog" aria-labelledby="chauffeur-title" aria-describedby="chauffeur-intro">
+      <form id="chauffeur-form">
+        <h2 id="chauffeur-title">Voeg chauffeur toe</h2>
+        <p id="chauffeur-intro" class="account-intro">Vul de gegevens van de nieuwe chauffeur in.</p>
+        <div class="account-field">
+          <label for="newChauffeur">Naam</label>
+          <input id="newChauffeur" name="naam" required maxlength="255" autocomplete="name" placeholder="Voor- en achternaam">
+        </div>
+        <div class="account-field">
+          <label for="newChauffeurPostcode">Postcode</label>
+          <input id="newChauffeurPostcode" name="postcode" autocomplete="postal-code" placeholder="1234AB">
+        </div>
+        <div class="account-field">
+          <label for="newChauffeurEmail">E-mail</label>
+          <input id="newChauffeurEmail" name="email" type="email" autocomplete="email" placeholder="naam@voorbeeld.nl">
+        </div>
+        <div class="account-field">
+          <label for="newChauffeurIBAN">IBAN</label>
+          <input id="newChauffeurIBAN" name="iban" autocomplete="off" placeholder="NL00 BANK 0000 0000 00">
+        </div>
+        <div class="account-field">
+          <label for="newChauffeurPassword">Wachtwoord (minimaal 8 tekens, 1 cijfer en 1 leesteken)</label>
+          <input id="newChauffeurPassword" name="wachtwoord" type="password" required autocomplete="new-password">
+        </div>
+        <p id="chauffeur-result" role="status"></p>
+        <div class="account-actions">
+          <button class="account-close" type="button" onclick="document.getElementById('chauffeur-dialog').close()">Sluiten</button>
+          <button class="account-submit" type="submit">Voeg chauffeur toe</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="medewerker-dialog" class="account-dialog" aria-labelledby="medewerker-title" aria-describedby="medewerker-intro">
       <form id="medewerker-form">
         <h2 id="medewerker-title">Voeg medewerker toe</h2>
-        <p id="medewerker-intro" class="medewerker-intro">De medewerker ontvangt direct een uitnodiging om een wachtwoord aan te maken en 2FA in te stellen, eventueel via e-mail.</p>
-        <div class="medewerker-field">
+        <p id="medewerker-intro" class="account-intro">De medewerker ontvangt direct een uitnodiging om een wachtwoord aan te maken en 2FA in te stellen, eventueel via e-mail.</p>
+        <div class="account-field">
         <label for="medewerker-naam">Naam</label>
         <input id="medewerker-naam" name="naam" required maxlength="255" autocomplete="name" placeholder="Voor- en achternaam">
         </div>
-        <div class="medewerker-field">
+        <div class="account-field">
         <label for="medewerker-email">E-mail</label>
         <input id="medewerker-email" name="email" type="email" required maxlength="255" autocomplete="email" placeholder="naam@voorbeeld.nl">
         </div>
         <p id="medewerker-result" role="status"></p>
-        <div class="medewerker-actions">
-          <button class="medewerker-close" type="button" onclick="document.getElementById('medewerker-dialog').close()">Sluiten</button>
-          <button class="medewerker-submit" type="submit">Voeg medewerker toe</button>
+        <div class="account-actions">
+          <button class="account-close" type="button" onclick="document.getElementById('medewerker-dialog').close()">Sluiten</button>
+          <button class="account-submit" type="submit">Voeg medewerker toe</button>
         </div>
       </form>
     </dialog>
@@ -1456,6 +1555,10 @@ if (isset($_GET['action'])) {
           <div class="new-rit-field">
             <label for="new-rit-email">E-mailadres contactpersoon</label>
             <input id="new-rit-email" name="email" type="email" required autocomplete="email">
+          </div>
+          <div class="new-rit-field full-width">
+            <label for="new-rit-opmerking">Opmerking voor chauffeur (optioneel)</label>
+            <textarea id="new-rit-opmerking" name="opmerking" rows="2"></textarea>
           </div>
           <div class="new-rit-field full-width">
             <label for="new-rit-adres">Adres</label>
@@ -1530,16 +1633,16 @@ if (isset($_GET['action'])) {
         <table>
           <thead>
             <tr>
-              <th>Gegevens contactpersoon</th>
-              <th>Voorkeur afhaaldag</th>
-              <th>Verwacht totaal-bedrag</th>
-              <th>Soort</th>
-              <th>Chauffeur</th>
-              <th>Afhaaldatum</th>
-              <th>Afhaaltijd</th>
-              <th>Gestort munt bedrag</th>
-              <th>Gereden kilometers</th>
-              <th>Status</th>
+              <th data-column="contact">Gegevens contactpersoon</th>
+              <th data-column="voorkeurAfhaalmoment">Voorkeur afhaaldag</th>
+              <th data-column="verwachtBedrag">Verwacht totaal-bedrag</th>
+              <th data-column="soort">Soort</th>
+              <th data-column="chauffeur">Chauffeur</th>
+              <th data-column="afhaalmoment">Afhaaldatum</th>
+              <th data-column="afhaaltijd">Afhaaltijd</th>
+              <th data-column="gestort">Gestort munt bedrag</th>
+              <th data-column="gereden">Gereden kilometers</th>
+              <th data-column="status">Status</th>
             </tr>
           </thead>
           <tbody id="tableBody"></tbody>
@@ -1553,7 +1656,7 @@ if (isset($_GET['action'])) {
     <div class="button-row">
       <button id="rapport-button" onclick="openRapport()">Rapport</button>
       <?php if ($canViewEmailRapport): ?>
-      <button type="button" onclick="window.open('emailRapport.php', '_blank', 'noopener')">E-mailrapport</button>
+      <button type="button" onclick="window.open('emailRapport.php?return=index.php', '_blank', 'noopener')">E-mailrapport</button>
       <?php endif; ?>
     </div>
 
@@ -1624,7 +1727,7 @@ if (isset($_GET['action'])) {
       if ((options.method || 'GET').toUpperCase() !== 'GET') {
         headers.set('X-CSRF-Token', csrfToken);
       }
-      return window.fetch(url, { ...options, headers });
+      return window.fetch(url, { cache: 'no-store', ...options, headers });
     }
     const userTabs = Array.from(document.querySelectorAll('#chauffeur-section [role="tab"]'));
     function activateUserTab(selectedTab) {
@@ -1841,12 +1944,20 @@ if (isset($_GET['action'])) {
 
     // Controle voor "Bevestig deze rit" (chauffeur + afhaalmoment + afhaaltijd)
     function validateRitConfirmationRow(row){
-      const chauffeur = row.querySelector("select[data-field='chauffeur']");
-      const afhaalmoment = row.querySelector("input[data-field='afhaalmoment']");
-      const afhaaltijd = row.querySelector("input[data-field='afhaaltijd']");
-      if (!chauffeur || chauffeur.value === "Chauffeur kiezen") return false;
-      if (!afhaalmoment || isEmpty(afhaalmoment.value)) return false;
-      if (!afhaaltijd || isEmpty(afhaaltijd.value)) return false;
+      // Wijknaam is optioneel; de definitieve planning is wel verplicht.
+      const fields = [
+        ['chauffeur', 'Kies een chauffeur.'],
+        ['afhaalmoment', 'Vul de afhaaldatum in (rechts naast de chauffeur). De voorkeur afhaaldag is niet de definitieve afhaaldatum.'],
+        ['afhaaltijd', 'Vul de afhaaltijd in.']
+      ];
+      for (const [field, message] of fields) {
+        const input = row.querySelector("[data-field='" + field + "']");
+        if (!input || isEmpty(input.value) || (field === 'chauffeur' && input.value === 'Chauffeur kiezen')) {
+          showNotification(message, 'error', 7000);
+          if (input) input.focus();
+          return false;
+        }
+      }
       return true;
     }
 
@@ -1859,6 +1970,10 @@ if (isset($_GET['action'])) {
       const statusSelect = row.querySelector("select[data-field='status']");
       
       if(chauffeurSelect && gestortInput && geredenInput && statusSelect) {
+        if (statusSelect.value === 'Afgehandeld') {
+          statusSelect.disabled = !canAdmin;
+          return;
+        }
         const chauffeur = chauffeurSelect.value;
         const gestort = gestortInput.value.trim();
         const gereden = geredenInput.value.trim();
@@ -2172,10 +2287,26 @@ if (isset($_GET['action'])) {
         .catch(err => console.error("Fout bij updaten chauffeur select:", err));
     }
     
-    function loadRitten() {
-      apiFetch(buildUrl("loadRitten"))
-        .then(response => response.json())
+    let ritSaveInFlight = null;
+    let ritLoadInFlight = false;
+    let ritEditSequence = 0;
+    function canRefreshRitten() {
+      if (document.hidden || ritSaveInFlight || document.querySelector('#tableBody tr[data-dirty="true"]')) return false;
+      if (document.activeElement?.closest('input, textarea, select, [contenteditable="true"]')) return false;
+      return !Array.from(document.querySelectorAll('[id$="Overlay"], [id$="Modal"], dialog, #newRitDialog, #existingOfferNotice')).some(el => el.getClientRects().length > 0);
+    }
+    setInterval(() => { if (canRefreshRitten()) loadRitten(true); }, 30000);
+    document.addEventListener('visibilitychange', () => { if (canRefreshRitten()) loadRitten(true); });
+    window.addEventListener('focus', () => { if (canRefreshRitten()) loadRitten(true); });
+    function loadRitten(background = false) {
+      if (ritLoadInFlight || (background && !canRefreshRitten())) return Promise.resolve();
+      ritLoadInFlight = true;
+      const editSequence = ritEditSequence;
+      return apiFetch(buildUrl("loadRitten"))
+        .then(response => { if (!response.ok) throw new Error("Ritten konden niet worden vernieuwd."); return response.json(); })
         .then(data => {
+          if (editSequence !== ritEditSequence || (background && !canRefreshRitten())) return;
+          if (!Array.isArray(data)) throw new Error("Ongeldige ritgegevens.");
           const tableBody = document.getElementById("tableBody");
           tableBody.innerHTML = "";
           if (!data || data.length === 0) {
@@ -2187,7 +2318,8 @@ if (isset($_GET['action'])) {
             updateChauffeurSelect();
           }
         })
-        .catch(err => console.error("Fout bij laden ritten:", err));
+        .catch(err => console.error("Fout bij laden ritten:", err))
+        .finally(() => { ritLoadInFlight = false; });
     }
     
     function buildRitRow(rit = {}) {
@@ -2195,12 +2327,14 @@ if (isset($_GET['action'])) {
       const chauffeurValue = normalizeChauffeurValue(rit.chauffeur);
       tr.setAttribute("data-chauffeur", chauffeurValue);
       tr.setAttribute("data-dirty", "false");
+      tr.dataset.version = rit.__version || "";
+      tr.dataset.editSequence = "0";
       tr.setAttribute(
         "data-chauffeur-mail-sent",
         Number(rit.heeft_openstaande_aanbieding || 0) === 1 ? "true" : "false"
       );
-      tr.innerHTML = `
-        <td>
+      const cells = [
+        { column: "contact", html: `
           <input type="hidden" class="rowId" value="${escapeHtmlAttribute(rit.id)}">
           <div style="display: flex;">
             <input type="text" placeholder="Collectegebied" value="${escapeHtmlAttribute(rit.collectegebied)}" ${ fullAccess ? '' : 'disabled'} data-field="collectegebied" style="flex:0.85 1 auto;">
@@ -2214,17 +2348,18 @@ if (isset($_GET['action'])) {
           <input type="text" placeholder="Telefoonnummer" value="${escapeHtmlAttribute(rit.telefoonnummer)}" ${ fullAccess ? '' : 'disabled'} data-field="telefoonnummer"><br>
           <input type="email" class="email-short" placeholder="E-mail" value="${escapeHtmlAttribute(rit.email)}" ${ fullAccess ? '' : 'disabled'} data-field="email">
           ${ fullAccess ? '<button class="send-email-test-btn" onclick="sendBasisemailTest(this)" aria-label="Test bevestigingsmail"></button>' : '' }
-        </td>
-        <td><input type="date" value="${escapeHtmlAttribute(rit.voorkeurAfhaalmoment)}" ${ fullAccess ? '' : 'disabled'} data-field="voorkeurAfhaalmoment"></td>
-        <td><input type="number" value="${escapeHtmlAttribute(rit.verwachtBedrag)}" ${ fullAccess ? '' : 'disabled'} data-field="verwachtBedrag"></td>
-        <td>
+          <br><label>Opmerking voor chauffeur<textarea placeholder="Opmerking voor chauffeur" ${ fullAccess ? '' : 'disabled'} data-field="opmerking" rows="2">${escapeHtmlAttribute(rit.opmerking || '')}</textarea></label>
+        ` },
+        { column: "voorkeurAfhaalmoment", html: `<input type="date" value="${escapeHtmlAttribute(rit.voorkeurAfhaalmoment)}" ${ fullAccess ? '' : 'disabled'} data-field="voorkeurAfhaalmoment">` },
+        { column: "verwachtBedrag", html: `<input type="number" value="${escapeHtmlAttribute(rit.verwachtBedrag)}" ${ fullAccess ? '' : 'disabled'} data-field="verwachtBedrag">` },
+        { column: "soort", html: `
           <select ${ fullAccess ? '' : 'disabled'} data-field="soort">
             <option value="munt- en briefgeld" ${rit.soort==="munt- en briefgeld" ? "selected" : ""}>munt- en briefgeld</option>
             <option value="alleen muntgeld" ${rit.soort==="alleen muntgeld" ? "selected" : ""}>alleen muntgeld</option>
             <option value="alleen briefgeld" ${rit.soort==="alleen briefgeld" ? "selected" : ""}>alleen briefgeld</option>
           </select>
-        </td>
-        <td>
+        ` },
+        { column: "chauffeur", html: `
           <div class="chauffeur-cell">
             <div class="chauffeur-select-wrapper">
               <select data-field="chauffeur" data-selected="${escapeHtmlAttribute(chauffeurValue)}">
@@ -2236,19 +2371,30 @@ if (isset($_GET['action'])) {
               ${ canAdmin ? '<button class="delete-button" onclick="deleteRow(this)">Verwijder rit</button>' : '' }
             </div>
           </div>
-        </td>
-        <td><input type="date" value="${escapeHtmlAttribute(rit.afhaalmoment)}" ${ fullAccess ? '' : 'disabled'} data-field="afhaalmoment"></td>
-        <td><input type="time" value="${escapeHtmlAttribute(rit.afhaaltijd)}" ${ fullAccess ? '' : 'disabled'} data-field="afhaaltijd"></td>
-        <td><input type="number" value="${escapeHtmlAttribute(rit.gestort)}" ${ fullAccess ? '' : 'disabled'} data-field="gestort"></td>
-        <td><input type="number" class="no-spinner" step="1" value="${rit.gereden ? Math.round(Number(rit.gereden)) : ''}" ${ fullAccess ? '' : 'disabled'} data-field="gereden"></td>
-        <td>
+        ` },
+        { column: "afhaalmoment", html: `<input type="date" value="${escapeHtmlAttribute(rit.afhaalmoment)}" ${ fullAccess ? '' : 'disabled'} data-field="afhaalmoment">` },
+        { column: "afhaaltijd", html: `<input type="time" value="${escapeHtmlAttribute(rit.afhaaltijd)}" ${ fullAccess ? '' : 'disabled'} data-field="afhaaltijd">` },
+        { column: "gestort", html: `<input type="number" value="${escapeHtmlAttribute(rit.gestort)}" ${ fullAccess ? '' : 'disabled'} data-field="gestort">` },
+        { column: "gereden", html: `<input type="number" class="no-spinner" step="1" value="${rit.gereden ? Math.round(Number(rit.gereden)) : ''}" ${ fullAccess ? '' : 'disabled'} data-field="gereden">` },
+        { column: "status", html: `
           <select data-field="status">
             <option value="-">-</option>
             <option value="Afgehandeld" ${rit.status==="Afgehandeld" ? "selected" : ""}>Afgehandeld</option>
           </select>
-        </td>
-      `;
-      tr.querySelectorAll("input, select").forEach(addAutoSaveListeners);
+          ${canAdmin && rit.status === 'Afgehandeld' ? '<button type="button" class="action-btn reopen-rit-button" onclick="reopenCompletedTrip(this)">Rit heropenen</button>' : ''}
+        ` }
+      ];
+      cells.forEach(({ column, html }) => {
+        const cell = document.createElement("td");
+        cell.dataset.column = column;
+        cell.innerHTML = html;
+        tr.appendChild(cell);
+      });
+      tr.querySelectorAll("input, select, textarea").forEach(field => {
+        field.setAttribute("data-lpignore", "true");
+        field.setAttribute("data-1p-ignore", "true");
+        addAutoSaveListeners(field);
+      });
       return tr;
     }
     
@@ -2572,7 +2718,6 @@ if (isset($_GET['action'])) {
 
       // >>> VALIDATIE voor "Bevestig deze rit" <<<
       if (!validateRitConfirmationRow(row)) {
-        showIncompleteMsg();
         return;
       }
 
@@ -2585,9 +2730,30 @@ if (isset($_GET['action'])) {
       document.getElementById("sendEmailOverlay").style.display = "none";
     }
 
+    async function reopenCompletedTrip(button) {
+      if (!canAdmin || !window.confirm('Weet je zeker dat je deze afgeronde rit weer open wilt zetten?')) return;
+      const row = button.closest('tr');
+      const status = row.querySelector("select[data-field='status']");
+      if (status.value !== 'Afgehandeld') return;
+      button.disabled = true;
+      status.value = '-';
+      markRowDirty(row);
+      updateRowBackground(row);
+      clearTimeout(saveTimer);
+      try {
+        await saveRitten();
+        button.remove();
+        showNotification('De rit is weer opengezet.', 'success');
+      } catch (error) {
+        status.value = 'Afgehandeld';
+        updateRowBackground(row);
+      } finally { button.disabled = false; }
+    }
+
     function markRowDirty(row) {
       if (row) {
         row.setAttribute("data-dirty", "true");
+        row.dataset.editSequence = String(++ritEditSequence);
       }
     }
     
@@ -2619,7 +2785,7 @@ if (isset($_GET['action'])) {
       if (statusValue === "Afgehandeld") {
          row.style.backgroundColor = "#ccffcc";
          const yellowSelectors = "select[data-field='chauffeur'], input[data-field='afhaalmoment'], input[data-field='afhaaltijd'], input[data-field='gestort'], input[data-field='gereden']";
-         row.querySelectorAll(yellowSelectors).forEach(field => { field.disabled = true; });
+         row.querySelectorAll(yellowSelectors).forEach(field => { field.disabled = !canAdmin; });
       } else {
          const chauffeurSelect = row.querySelector("select[data-field='chauffeur']");
          if (chauffeurSelect && chauffeurSelect.value && chauffeurSelect.value !== "Chauffeur kiezen") {
@@ -2635,12 +2801,14 @@ if (isset($_GET['action'])) {
     
     function autoSave() {
       clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => { saveRitten(); }, 1000);
+      saveTimer = setTimeout(() => { saveRitten().catch(() => {}); }, 1000);
     }
     
     function saveRitten() {
+      if (ritSaveInFlight) return ritSaveInFlight.then(() => saveRitten());
       const rows = document.querySelectorAll("#tableBody tr");
       let ritten = [];
+      const submittedRows = [];
       rows.forEach(row => {
         const collectegebiedInput = row.querySelector("input[data-field='collectegebied']");
         if (!collectegebiedInput) {
@@ -2657,6 +2825,7 @@ if (isset($_GET['action'])) {
           postcodePlaats: row.querySelector("input[data-field='postcodePlaats']").value,
           telefoonnummer: row.querySelector("input[data-field='telefoonnummer']").value,
           email: row.querySelector("input[data-field='email']").value,
+          opmerking: row.querySelector("textarea[data-field='opmerking']").value,
           voorkeurAfhaalmoment: row.querySelector("input[data-field='voorkeurAfhaalmoment']").value,
           verwachtBedrag: row.querySelector("input[data-field='verwachtBedrag']").value,
           soort: row.querySelector("select[data-field='soort']").value,
@@ -2666,11 +2835,14 @@ if (isset($_GET['action'])) {
           gestort: row.querySelector("input[data-field='gestort']").value,
           gereden: row.querySelector("input[data-field='gereden']").value ? parseInt(Math.round(row.querySelector("input[data-field='gereden']").value)) : 0,
           status: row.querySelector("select[data-field='status']").value,
+          __version: row.dataset.version || "",
           __dirty: row.getAttribute("data-dirty") === "true"
         };
         ritten.push(data);
+        submittedRows.push({ row, sequence: row.dataset.editSequence });
       });
-      return apiFetch(buildUrl("saveRitten"), {
+      if (!ritten.some(rit => rit.__dirty || !rit.id)) return Promise.resolve({status: "ok"});
+      ritSaveInFlight = apiFetch(buildUrl("saveRitten"), {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify(ritten)
@@ -2693,13 +2865,13 @@ if (isset($_GET['action'])) {
       })
       .then(result => {
         const ids = Array.isArray(result) ? result : (result.ids || []);
-        const rows = document.querySelectorAll("#tableBody tr");
-        rows.forEach((row, index) => {
+        submittedRows.forEach(({ row, sequence }, index) => {
           let idField = row.querySelector(".rowId");
           if (idField && (!idField.value || idField.value === "") && ids[index]) {
             idField.value = ids[index];
           }
-          row.setAttribute("data-dirty", "false");
+          if (result.versions?.[index]) row.dataset.version = result.versions[index];
+          if (row.dataset.editSequence === sequence) row.setAttribute("data-dirty", "false");
         });
         showExistingOfferAlerts(result.alerts || []);
         return result;
@@ -2708,7 +2880,9 @@ if (isset($_GET['action'])) {
         console.error("Fout bij opslaan:", err);
         showNotification("Opslaan van de rit is mislukt: " + err.message, "error", 7000);
         throw err;
-      });
+      })
+      .finally(() => { ritSaveInFlight = null; });
+      return ritSaveInFlight;
     }
     
     // Aangepaste functie: als het veld 'Wijknaam' is ingevuld, stuur deze mee in de JSON-data
@@ -2728,12 +2902,39 @@ if (isset($_GET['action'])) {
       document.getElementById("sendEmailOverlay").style.display = "flex";
     }
     
+    async function sendRitConfirmation(url, payload) {
+      let response;
+      try {
+        response = await apiFetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (error) {
+        throw new Error('Geen verbinding met de server. De verzendstatus is onbekend.');
+      }
+      if (response.status === 401 || response.redirected) {
+        throw new Error('Je sessie is verlopen. Log opnieuw in.');
+      }
+      if (response.status === 403) {
+        throw new Error('Geen toegang of verlopen beveiligingstoken. Vernieuw de pagina en log zo nodig opnieuw in.');
+      }
+      let result;
+      try {
+        result = await response.json();
+      } catch (error) {
+        throw new Error('Ongeldig serverantwoord (HTTP ' + response.status + '). Laat de beheerder het serverlog controleren.');
+      }
+      if (!response.ok || !result || result.status !== 'success') {
+        throw new Error(result?.message || 'Versturen mislukt (HTTP ' + response.status + ').');
+      }
+    }
+
     async function confirmRit() {
       if (!currentConfirmRow) return;
 
       // Dubbelcheck (mocht modal via externe call geopend zijn)
       if (!validateRitConfirmationRow(currentConfirmRow)) {
-        showIncompleteMsg();
         return;
       }
       let ritId;
@@ -2809,52 +3010,21 @@ if (isset($_GET['action'])) {
           wijknaam = wijkField.value.trim();
       }
       
-      // Verstuur e-mail naar de contactpersoon
-      apiFetch("sendBevestigingContact.php", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          to: emailContact,
-          body: bodyContact,
-          wijknaam: wijknaam,
-          ritId: ritId
-        })
-      })
-      .then(response => response.json())
-      .then(result => {
-        if (result.status !== "success") {
-          alert("Fout bij versturen bevestiging naar contact: " + result.message);
-        }
-      })
-      .catch(err => {
-        console.error("Fout bij versturen bevestiging contact:", err);
-        alert("Fout bij versturen bevestiging contact.");
-      });
-      
-      // Verstuur e-mail naar de chauffeur
-      apiFetch("sendBevestigingChauffeur.php", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          to: chauffeurEmail,
-          body: bodyChauffeur,
-          wijknaam: wijknaam,
-          ritId: ritId
-        })
-      })
-      .then(response => response.json())
-      .then(result => {
-        if (result.status !== "success") {
-          alert("Fout bij versturen bevestiging naar chauffeur: " + result.message);
-        } else {
-          alert("Bevestigingsmails verstuurd.");
-          document.getElementById("confirmRitModal").style.display = "none";
-        }
-      })
-      .catch(err => {
-        console.error("Fout bij versturen bevestiging chauffeur:", err);
-        alert("Fout bij versturen bevestiging chauffeur.");
-      });
+      const recipients = [
+        { label: 'Contactpersoon', url: 'sendBevestigingContact.php', to: emailContact, body: bodyContact },
+        { label: 'Chauffeur', url: 'sendBevestigingChauffeur.php', to: chauffeurEmail, body: bodyChauffeur }
+      ];
+      const results = await Promise.allSettled(recipients.map(recipient =>
+        sendRitConfirmation(recipient.url, { to: recipient.to, body: recipient.body, wijknaam, ritId })
+      ));
+      if (results.every(result => result.status === 'fulfilled')) {
+        alert('Bevestigingsmails verstuurd.');
+        document.getElementById('confirmRitModal').style.display = 'none';
+      } else {
+        const messages = results.map((result, index) => recipients[index].label + ': ' +
+          (result.status === 'fulfilled' ? 'verstuurd.' : result.reason.message));
+        alert(messages.join('\n') + '\nControleer het e-mailrapport voordat je opnieuw verstuurt; een mail kan al verzonden zijn.');
+      }
     }
     
     <?php if ($fullAccess): ?>
@@ -2910,39 +3080,38 @@ if (isset($_GET['action'])) {
         result.textContent = 'Geen bevestiging ontvangen. Controleer of het account bestaat voordat je opnieuw probeert.';
       } finally { button.disabled = false; }
     });
-    function addChauffeur() {
-      const addButton = document.getElementById("add-chauffeur-button");
-      const chauffeurName = document.getElementById("newChauffeur").value.trim();
-      const chauffeurPostcode = document.getElementById("newChauffeurPostcode").value.trim();
-      const chauffeurEmail = document.getElementById("newChauffeurEmail").value.trim();
-      const chauffeurIBAN = document.getElementById("newChauffeurIBAN").value.trim();
-      const chauffeurPassword = document.getElementById("newChauffeurPassword").value.trim();
-      if (!chauffeurName) { alert("Vul een naam in."); return; }
-      addButton.disabled = true;
-      apiFetch(buildUrl("addChauffeur"), {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ chauffeur: chauffeurName, postcode: chauffeurPostcode, email: chauffeurEmail, IBAN: chauffeurIBAN, wachtwoord: chauffeurPassword })
-      })
-      .then(async response => {
-        const text = await response.text();
-        if (!response.ok) {
-          throw new Error(text || "Toevoegen van chauffeur is mislukt.");
+    document.getElementById('chauffeur-form')?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector('[type="submit"]');
+      const result = document.getElementById('chauffeur-result');
+      button.disabled = true;
+      result.textContent = 'Chauffeur wordt aangemaakt...';
+      try {
+        const response = await apiFetch(buildUrl('addChauffeur'), {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            chauffeur: form.elements.naam.value.trim(),
+            postcode: form.elements.postcode.value.trim(),
+            email: form.elements.email.value.trim(),
+            IBAN: form.elements.iban.value.trim(),
+            wachtwoord: form.elements.wachtwoord.value
+          })
+        });
+        const message = await response.text();
+        result.textContent = message || 'Toevoegen van chauffeur is mislukt.';
+        if (response.ok && message.trim() === 'Chauffeur toegevoegd.') {
+          form.reset();
+          loadChauffeurs();
         }
-        return text;
-      })
-      .then(text => {
-        document.getElementById("newChauffeur").value = "";
-        document.getElementById("newChauffeurPostcode").value = "";
-        document.getElementById("newChauffeurEmail").value = "";
-        document.getElementById("newChauffeurIBAN").value = "";
-        document.getElementById("newChauffeurPassword").value = "";
-        alert(text);
-        loadChauffeurs();
-      })
-      .catch(err => { console.error("Fout bij toevoegen chauffeur:", err); alert(err.message); })
-      .finally(() => { addButton.disabled = false; });
-    }
+      } catch (error) {
+        console.error('Fout bij toevoegen chauffeur:', error);
+        result.textContent = 'Geen bevestiging ontvangen. Controleer of de chauffeur bestaat voordat je opnieuw probeert.';
+      } finally {
+        button.disabled = false;
+      }
+    });
     function rebuildAllGeocodes() {
       if (!confirm("Weet je zeker dat je alle lat/lon opnieuw wilt laten berekenen?")) return;
       apiFetch(buildUrl("rebuildAllGeocodes"), {
@@ -3037,7 +3206,7 @@ if (isset($_GET['action'])) {
       const row = ensureNewRitRow();
       const fields = [
         "collectegebied", "gebiedsnummer", "wijknaam", "contactpersoon", "adres",
-        "postcodePlaats", "telefoonnummer", "email", "voorkeurAfhaalmoment", "verwachtBedrag", "soort"
+        "postcodePlaats", "telefoonnummer", "email", "opmerking", "voorkeurAfhaalmoment", "verwachtBedrag", "soort"
       ];
       fields.forEach(field => {
         const rowField = row.querySelector(`[data-field='${field}']`);

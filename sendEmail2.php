@@ -19,6 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $bcc     = $_POST['bcc'] ?? '';
     $subject = $_POST['subject'] ?? 'Afronding afstort collecte-opbrengst';
     $body    = $_POST['body'] ?? '';
+    $body = afstort_replace_opmerking($body, (string)($_POST['opmerking'] ?? ''));
     if (!filter_var($to, FILTER_VALIDATE_EMAIL) ||
         ($cc !== '' && !filter_var($cc, FILTER_VALIDATE_EMAIL)) ||
         ($bcc !== '' && !filter_var($bcc, FILTER_VALIDATE_EMAIL)) ||
@@ -107,6 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $template = str_replace("[soort]", $soort, $template);
     $template = str_replace("[gestort]", $gestort, $template);
     $template = str_replace("[chauffeur]", $chauffeur, $template);
+    $template = afstort_replace_opmerking($template, (string)($_GET['opmerking'] ?? ''));
     ?>
 <!DOCTYPE html>
 <html lang="nl">

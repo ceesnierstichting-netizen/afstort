@@ -84,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !authRateAllowed($pdo, '2fa', $user
                 twofa_remember_today($user, $twofaRememberKey);
             }
             twofa_finish_login($user);
-            header("Location: index.php");
+            header("Location: index2.php");
             exit();
         }
     }
@@ -100,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !authRateAllowed($pdo, '2fa', $user
                 twofa_remember_today($user, $twofaRememberKey);
             }
             twofa_finish_login($user);
-            header("Location: index.php");
+            header("Location: index2.php");
             exit();
         }
     } else {
@@ -113,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !authRateAllowed($pdo, '2fa', $user
                 twofa_remember_today($user, $twofaRememberKey);
             }
             twofa_finish_login($user);
-            header("Location: index.php");
+            header("Location: index2.php");
             exit();
         }
 
@@ -126,7 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !authRateAllowed($pdo, '2fa', $user
                     twofa_remember_today($user, $twofaRememberKey);
                 }
                 twofa_finish_login($user);
-                header("Location: index.php");
+                header("Location: index2.php");
                 exit();
             }
         }

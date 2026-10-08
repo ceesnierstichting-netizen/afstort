@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/session.php';
+require_once __DIR__ . '/app_helpers.php';
 afstort_require_login();
 afstort_require_csrf();
 ini_set('display_errors', 1);
@@ -8,6 +9,7 @@ error_reporting(E_ALL);
 $to      = $_POST['to'] ?? '';
 $subject = $_POST['subject'] ?? '';
 $body    = $_POST['body'] ?? '';
+$body = afstort_replace_opmerking($body, (string)($_POST['opmerking'] ?? ''));
 $from    = $_POST['from'] ?? '';
 
 if(empty($to) || empty($subject) || empty($body)){

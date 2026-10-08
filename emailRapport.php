@@ -8,34 +8,54 @@ if (empty($_SESSION['username']) || empty($_SESSION['twofa_verified'])) {
 }
 
 refreshCurrentUserAccess($pdo);
-if (!canViewEmailRapport($_SESSION)) {
+$allTripsReport = hasDashboardAccess($_SESSION);
+if (!$allTripsReport && !canViewEmailRapport($_SESSION) && ($_GET['return'] ?? '') !== 'index2.php') {
     http_response_code(403);
     echo 'Dit e-mailrapport is alleen beschikbaar voor gebruikers met Full Access.';
     exit;
 }
 
+// Only local portal destinations are accepted, preventing external redirects.
+$returnTo = 'index2.php';
+
 ensureRitAanbiedingenTable($pdo);
 ensureRitEmailLogTable($pdo);
 ensureRittenAuditColumns($pdo);
 
-$ritten = $pdo->query("
-    SELECT id, collectegebied, gebiedsnummer, contactpersoon, postcodePlaats, chauffeur, status,
-           aangemaakt_door, aangemaakt_door_email
-    FROM ritten
-    ORDER BY id DESC
-")->fetchAll(PDO::FETCH_ASSOC);
+$ownReport = !$allTripsReport;
+$reportWhere = $ownReport
+    ? 'WHERE TRIM(r.chauffeur) = (SELECT TRIM(naam) FROM chauffeurs WHERE id = ?)'
+    : '';
+$reportParams = $ownReport ? [(int)$_SESSION['user_id']] : [];
+$rittenQuery = $pdo->prepare("
+    SELECT r.id, r.collectegebied, r.gebiedsnummer, r.contactpersoon, r.postcodePlaats, r.chauffeur, r.status,
+           r.aangemaakt_door, r.aangemaakt_door_email
+    FROM ritten r
+    $reportWhere
+    ORDER BY r.id DESC
+");
+$rittenQuery->execute($reportParams);
+$ritten = $rittenQuery->fetchAll(PDO::FETCH_ASSOC);
 
-$emailRows = $pdo->query("
-    SELECT rit_id, soort, ontvanger, onderwerp, status, melding, verzonden_op
-    FROM rit_email_log
-    ORDER BY verzonden_op DESC, id DESC
-")->fetchAll(PDO::FETCH_ASSOC);
+$emailQuery = $pdo->prepare("
+    SELECT e.rit_id, e.soort, e.ontvanger, e.onderwerp, e.status, e.melding, e.verzonden_op
+    FROM rit_email_log e
+    INNER JOIN ritten r ON r.id = e.rit_id
+    $reportWhere
+    ORDER BY e.verzonden_op DESC, e.id DESC
+");
+$emailQuery->execute($reportParams);
+$emailRows = $emailQuery->fetchAll(PDO::FETCH_ASSOC);
 
-$aanbiedingen = $pdo->query("
-    SELECT rit_id, chauffeur_naam, chauffeur_email, status, aangeboden_op, afgewezen_op
-    FROM rit_aanbiedingen
-    ORDER BY aangeboden_op DESC, id DESC
-")->fetchAll(PDO::FETCH_ASSOC);
+$aanbiedingenQuery = $pdo->prepare("
+    SELECT a.rit_id, a.chauffeur_naam, a.chauffeur_email, a.status, a.aangeboden_op, a.afgewezen_op
+    FROM rit_aanbiedingen a
+    INNER JOIN ritten r ON r.id = a.rit_id
+    $reportWhere
+    ORDER BY a.aangeboden_op DESC, a.id DESC
+");
+$aanbiedingenQuery->execute($reportParams);
+$aanbiedingen = $aanbiedingenQuery->fetchAll(PDO::FETCH_ASSOC);
 
 $eventsPerRit = [];
 foreach ($emailRows as $event) {
@@ -90,7 +110,7 @@ function rapportDatum($value) {
   <meta charset="utf-8">
   <?php echo noIndexMetaTag(); ?>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>E-mailrapport afstortverzoeken</title>
+  <title>Emailoverzicht</title>
   <style>
     body { margin: 0; padding: 24px; font-family: Arial, sans-serif; color: #18212b; background: #f4f6f8; }
     main { max-width: 1500px; margin: 0 auto; }
@@ -111,10 +131,10 @@ function rapportDatum($value) {
 </head>
 <body>
 <main>
-  <h1>E-mailrapport afstortverzoeken</h1>
+  <h1><?= $ownReport ? 'Emailoverzicht van mijn ritten' : 'Emailoverzicht' ?></h1>
   <p class="intro">Per invoerregel staan hieronder de geregistreerde e-mails en chauffeurgebeurtenissen met datum en tijd. Contactmails van vóór de ingebruikname van dit logboek zijn niet achteraf te reconstrueren.</p>
   <div class="actions">
-    <a href="index.php">Terug naar overzicht</a>
+    <a href="<?= htmlspecialchars($returnTo, ENT_QUOTES, 'UTF-8') ?>">Terug naar overzicht</a>
     <button type="button" onclick="window.print()">Afdrukken / opslaan als PDF</button>
   </div>
   <div class="table-wrap">
@@ -126,6 +146,7 @@ function rapportDatum($value) {
         </tr>
       </thead>
       <tbody>
+      <?php if (!$ritten): ?><tr><td colspan="10">Geen ritten gevonden.</td></tr><?php endif; ?>
       <?php foreach ($ritten as $rit): ?>
         <?php $events = $eventsPerRit[(int)$rit['id']] ?? []; ?>
         <?php if (!$events): $events = [[ 'datum' => null, 'soort' => 'Nog geen e-mails geregistreerd', 'ontvanger' => '-', 'status' => '-', 'details' => null ]]; endif; ?>

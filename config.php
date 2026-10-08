@@ -55,6 +55,9 @@ try {
     exit('Database tijdelijk niet beschikbaar.');
 }
 
+require_once __DIR__ . '/chauffeur_profiel.php';
+chauffeur_profiel_schema($pdo);
+
 if (!function_exists('normalizeFullAccess')) {
     function normalizeFullAccess($value) {
         if (is_bool($value)) {

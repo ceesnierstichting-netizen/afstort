@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/session.php';
+require_once __DIR__ . '/app_helpers.php';
 afstort_require_login();
 afstort_require_csrf();
 ini_set('display_errors', 1);
@@ -56,6 +57,7 @@ $replacements = [
     $data['telefoonnummer'] ?? ''
 ];
 $body = str_replace($placeholders, $replacements, $body);
+$body = afstort_replace_opmerking($body, (string)($data['opmerking'] ?? ''));
 
 $headers = "From: " . $from . "\r\n" .
            "Reply-To: " . $from . "\r\n" .

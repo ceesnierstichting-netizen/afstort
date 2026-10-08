@@ -82,11 +82,14 @@ function ensureRittenAuditColumns(PDO $pdo) {
         FROM INFORMATION_SCHEMA.COLUMNS
         WHERE TABLE_SCHEMA = DATABASE()
           AND TABLE_NAME = 'ritten'
-          AND COLUMN_NAME IN ('aangemaakt_door', 'aangemaakt_door_email')
+          AND COLUMN_NAME IN ('aangemaakt_door', 'aangemaakt_door_email', 'opmerking')
     ");
     $existing = array_map('strtolower', $stmt->fetchAll(PDO::FETCH_COLUMN));
 
     $missingColumns = [];
+    if (!in_array('opmerking', $existing, true)) {
+        $missingColumns[] = 'ADD COLUMN opmerking TEXT DEFAULT NULL';
+    }
     if (!in_array('aangemaakt_door', $existing, true)) {
         $missingColumns[] = 'ADD COLUMN aangemaakt_door VARCHAR(255) DEFAULT NULL';
     }
@@ -496,6 +499,51 @@ function afstort_rit_exists(PDO $pdo, int $ritId): bool {
     $stmt = $pdo->prepare('SELECT 1 FROM ritten WHERE id = ?');
     $stmt->execute([$ritId]);
     return (bool)$stmt->fetchColumn();
+}
+
+function afstort_replace_opmerking(string $body, string $opmerking): string {
+    $body = preg_replace('/\bP\.?\s*S\.?:?\s*(?=\[opmerking\])/i', '', $body);
+    $replacement = trim($opmerking) === '' ? '' : '<br><br><strong><em style="font-size:12pt;">'
+        . nl2br(htmlspecialchars($opmerking, ENT_QUOTES, 'UTF-8')) . '</em></strong>';
+    return str_ireplace('[opmerking]', $replacement, $body);
+}
+
+function afstort_chauffeur_mail_message(string $html): array {
+    $from = 'noreply@nierstichtingnederland.nl';
+    $boundary = 'afstort-' . bin2hex(random_bytes(24));
+    $plain = preg_replace('~<(script|style)\b[^>]*>.*?</\1\s*>~is', '', $html);
+    $plain = preg_replace('~<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>~is', '$2 ($1)', $plain);
+    $plain = preg_replace('~<(?:br|/p|/div|/tr|/h[1-6]|/li)\b[^>]*>~i', "\n", $plain);
+    $plain = trim(html_entity_decode(strip_tags($plain), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+    $encode = static function (string $text): string {
+        return quoted_printable_encode(preg_replace('/\r\n|\r|\n/', "\r\n", $text));
+    };
+    $headers = implode("\r\n", [
+        'From: Nierstichting <' . $from . '>',
+        'Reply-To: ' . $from,
+        'Date: ' . date(DATE_RFC2822),
+        'Message-ID: <' . bin2hex(random_bytes(24)) . '@nierstichtingnederland.nl>',
+        'MIME-Version: 1.0',
+        'Content-Type: multipart/alternative; boundary="' . $boundary . '"',
+    ]);
+    $body = '';
+    foreach (['text/plain' => $plain, 'text/html' => $html] as $type => $text) {
+        $body .= '--' . $boundary . "\r\n"
+            . 'Content-Type: ' . $type . "; charset=UTF-8\r\n"
+            . "Content-Transfer-Encoding: quoted-printable\r\n\r\n"
+            . $encode($text) . "\r\n";
+    }
+    $body .= '--' . $boundary . "--\r\n";
+    return ['headers' => $headers, 'body' => $body, 'envelope' => '-f' . $from];
+}
+
+function afstort_rit_opmerking_email(PDO $pdo, string $body, int $ritId): string {
+    if (stripos($body, '[opmerking]') === false) return $body;
+    ensureRittenAuditColumns($pdo);
+    $stmt = $pdo->prepare('SELECT opmerking FROM ritten WHERE id = ?');
+    $stmt->execute([$ritId]);
+    $opmerking = $stmt->fetchColumn();
+    return afstort_replace_opmerking($body, $opmerking === false || $opmerking === null ? '' : (string)$opmerking);
 }
 
 function afstort_document_token(int $ritId, string $document, string $key): string {

@@ -5,7 +5,7 @@ require_once('twofa.php');
 require_once('auth_rate_limit.php');
 
 if (isset($_SESSION['fullAccess']) && !empty($_SESSION['twofa_verified'])) {
-    header("Location: index.php");
+    header("Location: index2.php");
     exit();
 }
 
@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             authRateSuccess($pdo, 'login', $email);
             if (twofa_remember_valid($_COOKIE[TWOFA_REMEMBER_COOKIE] ?? null, $user, $twofaRememberKey, time())) {
                 twofa_finish_login($user);
-                header("Location: index.php");
+                header("Location: index2.php");
                 exit();
             }
             twofa_start_pending_login($user);
