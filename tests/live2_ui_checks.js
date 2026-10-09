@@ -72,6 +72,19 @@ context.ui.create();
 assert.match(element('#dialog-content').innerHTML, /requestKey" value="[a-f0-9]{32}"/);
 assert.match(element('#dialog-content').innerHTML, /echt verstuurd/);
 assert.doesNotMatch(element('#dialog-content').innerHTML, /testmail|fictief|gesimuleerd/);
+assert.match(element('#dialog-content').innerHTML, /<option value="" selected>Kies dichtstbij wonende<\/option>/);
+context.ui.setState({...state, drivers:[
+  {id:'2', name:'Anna <test>', email:'anna@example.test', availableYears:[2026]},
+  {id:'3', name:'Volgend jaar', email:'future@example.test', availableYears:[2027]},
+  {id:'4', name:'Geen mail', email:'', availableYears:[2026]}
+]});
+context.ui.create();
+const createHtml = element('#dialog-content').innerHTML;
+assert.match(createHtml, /<option value="2">Anna &lt;test&gt;<\/option>/);
+assert.doesNotMatch(createHtml, /Volgend jaar|Geen mail/);
+assert.ok(createHtml.indexOf('name="email"') < createHtml.indexOf('name="preferredDriverId"'));
+assert.ok(createHtml.indexOf('name="preferredDriverId"') < createHtml.indexOf('name="contactOpmerking"'));
+context.ui.setState(state);
 context.ui.preferences(); assert.equal(element('#users-management').open, true);
 context.ui.setState({ ...state, trips: [{ ...trip, mailError: 'Niet alle mails zijn verstuurd.' }] });
 context.ui.render();
@@ -94,6 +107,18 @@ assert.match(element('#dialog-content').innerHTML, /Laatst verstuurde mail/);
 assert.match(element('#dialog-content').innerHTML, /Afrondingsmail/);
 assert.match(element('#dialog-content').innerHTML, /bon.png/);
 assert.doesNotMatch(element('#dialog-content').innerHTML, /Oude afspraakmail|Mislukte mail|Andere rit/);
+context.ui.setState({...state, trips:reportTrips, preferences:{currentYear:2026, years:{2025:{kilometervergoeding:'0.25'},2026:{kilometervergoeding:'0.30'}}}});
+context.ui.render();
+handlers.get('#collection-year:change')({target:{value:'2025'}});
+assert.equal(element('#page-title').textContent, 'Rittenoverzicht 2025');
+assert.match(element('#trips').innerHTML, /Ander jaar/);
+assert.doesNotMatch(element('#trips').innerHTML, /Anna|Kantoor/);
+context.ui.report();
+assert.match(element('#dialog-content').innerHTML, /Ander jaar/);
+assert.match(element('#dialog-content').innerHTML, /10,00/);
+assert.match(element('#collection-year').innerHTML, /2026 \(huidig\)/);
+handlers.get('#collection-year:change')({target:{value:'2026'}});
+context.ui.setState(state);
 (async () => {
   const completed = { ...trip, status: 'done', gereden: '40', gestort: '548.98', bedragAangepastDoor: 'Kantoor <test>' };
   context.ui.setState({ ...state, trips: [completed] });

@@ -546,6 +546,22 @@ function afstort_rit_opmerking_email(PDO $pdo, string $body, int $ritId): string
     return afstort_replace_opmerking($body, $opmerking === false || $opmerking === null ? '' : (string)$opmerking);
 }
 
+function afstort_decline_token(int $ritId, string $name, int $expires, string $key): string {
+    return hash_hmac('sha256', 'afstort-afwijzen-v1:' . $ritId . ':' . rawurlencode($name) . ':' . $expires, $key);
+}
+
+function afstort_valid_decline_token(int $ritId, string $name, int $expires, string $token, string $key): bool {
+    return $ritId > 0 && $name !== '' && $expires >= time() && preg_match('/^[a-f0-9]{64}$/D', $token)
+        && hash_equals(afstort_decline_token($ritId, $name, $expires, $key), $token);
+}
+
+function afstort_decline_url(int $ritId, string $name, string $key): string {
+    $expires = time() + 30 * 86400;
+    return 'https://nierstichtingnederland.nl/afstort/declineRit.php?rit=' . $ritId
+        . '&chauffeur=' . rawurlencode($name) . '&expires=' . $expires
+        . '&token=' . afstort_decline_token($ritId, $name, $expires, $key);
+}
+
 function afstort_document_token(int $ritId, string $document, string $key): string {
     return hash_hmac('sha256', $document . ':' . $ritId, $key);
 }

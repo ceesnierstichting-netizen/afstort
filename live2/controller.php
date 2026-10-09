@@ -41,18 +41,23 @@ if ($api) {
             if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new InvalidArgumentException('Ongeldig verzoek.');
             afstort_require_csrf();
             $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
-            if (!is_array($input) || !isset($input['active']) || !is_bool($input['active'])) throw new InvalidArgumentException('Ongeldige chauffeurgegevens.');
+            if (!is_array($input) || (!array_key_exists('years', $input) && (!isset($input['active']) || !is_bool($input['active'])))) throw new InvalidArgumentException('Ongeldige chauffeurgegevens.');
             $mobiel = chauffeur_mobiel($input['mobiel'] ?? '');
-            $year = (int)portal_settings($pdo)['currentYear'];
-            if ((int)($input['year'] ?? 0) !== $year) throw new DomainException('Het actieve collectejaar is gewijzigd. Herlaad Beheer.');
+            $preferences = portal_settings($pdo);
+            $year = (int)$preferences['currentYear'];
+            $selectedYears = array_key_exists('years', $input) ? chauffeur_jaren($input['years']) : null;
+            $managedYears = array_map('intval', array_keys($preferences['years']));
+            if ($selectedYears !== null && array_diff($selectedYears, $managedYears)) throw new InvalidArgumentException('Maak het collectejaar eerst aan bij Collectejaren.');
+            if ($selectedYears === null && (int)($input['year'] ?? 0) !== $year) throw new DomainException('Het actieve collectejaar is gewijzigd. Herlaad Beheer.');
             $pdo->beginTransaction();
             try {
                 $q = $pdo->prepare('SELECT beschikbare_jaren FROM chauffeurs WHERE id = ? AND (is_medewerker = 0 OR naam = ?) AND naam <> ? FOR UPDATE');
                 $q->execute([(int)($input['id'] ?? 0), SELECTABLE_MEDEWERKER_CHAUFFEUR, 'Admin']);
                 $row = $q->fetch();
                 if (!$row) throw new DomainException('Chauffeur niet gevonden.');
-                $years = array_values(array_filter(json_decode($row['beschikbare_jaren'] ?? '[]', true) ?: [], fn($y) => (int)$y !== $year));
-                if (!empty($input['active'])) $years[] = $year;
+                $years = array_values(array_filter(json_decode($row['beschikbare_jaren'] ?? '[]', true) ?: [], fn($y) => $selectedYears !== null ? !in_array((int)$y, $managedYears, true) : (int)$y !== $year));
+                if ($selectedYears !== null) $years = array_merge($years, $selectedYears);
+                elseif (!empty($input['active'])) $years[] = $year;
                 $pdo->prepare('UPDATE chauffeurs SET mobiel = ?, beschikbare_jaren = ? WHERE id = ?')->execute([$mobiel, json_encode(chauffeur_jaren($years)), (int)$input['id']]);
                 $pdo->commit();
             } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
@@ -86,7 +91,7 @@ if ($api) {
         }
         if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'state') {
             header('Content-Type: application/json; charset=UTF-8');
-            echo json_encode(live2_state($pdo, $user), JSON_THROW_ON_ERROR); exit;
+            echo json_encode(live2_state($pdo, $user, $documentLinkKey), JSON_THROW_ON_ERROR); exit;
         }
         if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'receipt') {
             $id = (int)($_GET['id'] ?? 0); $row = live2_read_row($pdo, $id);
@@ -135,7 +140,7 @@ if ($api) {
             }
         }
         $message = live2_mutate($pdo, $_POST, $user, $uploads, $documentLinkKey);
-        echo json_encode(['message'=>$message] + live2_state($pdo, $user), JSON_THROW_ON_ERROR);
+        echo json_encode(['message'=>$message] + live2_state($pdo, $user, $documentLinkKey), JSON_THROW_ON_ERROR);
     } catch (InvalidArgumentException $error) {
         http_response_code(422); echo json_encode(['error'=>$error->getMessage()]);
     } catch (DomainException $error) {

@@ -7,23 +7,50 @@ class LiveMemoryPDO extends PDO {
     public array $trips = [], $extras = [], $outbox = [], $offers = [];
     public array $drivers = [['id'=>2,'naam'=>'Anna','email'=>'anna@example.test','fullAccess'=>0,'is_medewerker'=>0,'IBAN'=>'','postcode'=>'1234AB','lat'=>52.11,'lon'=>4.31,'beschikbare_jaren'=>'[2026]']];
     public array $settings = ['data'=>'{"currentYear":2026,"years":{"2026":{"kilometervergoeding":"0.30"}}}', 'revision'=>1];
+    public array $collectionYears = [2026=>['jaar'=>2026, 'kilometervergoeding'=>'0.30', 'is_huidig'=>1]];
     public array $templates = [];
     private ?array $backup = null;
     private int $lastId = 1;
     public function __construct() {
         foreach ([1,3,4,5,6] as $id) $this->templates[] = ['id'=>$id,'email_template'=>'<p>Beste [contactpersoon], [soort] [opmerking] [chauffeur] [afhaalmoment] [afhaaltijd] [gestort] [busbriefje]</p>'];
     }
-    public function beginTransaction(): bool { $this->backup = [$this->trips,$this->extras,$this->outbox,$this->offers]; return true; }
+    public function beginTransaction(): bool { $this->backup = [$this->trips,$this->extras,$this->outbox,$this->offers,$this->settings,$this->collectionYears]; return true; }
     public function inTransaction(): bool { return $this->backup !== null; }
     public function commit(): bool { $this->backup = null; return true; }
-    public function rollBack(): bool { [$this->trips,$this->extras,$this->outbox,$this->offers] = $this->backup; $this->backup = null; return true; }
+    public function rollBack(): bool { [$this->trips,$this->extras,$this->outbox,$this->offers,$this->settings,$this->collectionYears] = $this->backup; $this->backup = null; return true; }
     public function lastInsertId(?string $name = null): string|false { return (string)$this->lastId; }
-    public function exec(string $statement): int|false { return 0; }
+    public function exec(string $statement): int|false {
+        if (str_starts_with($statement, 'UPDATE collectejaren SET is_huidig=0')) {
+            foreach ($this->collectionYears as &$year) $year['is_huidig'] = 0;
+            unset($year);
+        }
+        if (str_starts_with($statement, 'INSERT IGNORE INTO collectejaren')) {
+            foreach ($this->trips as $trip) {
+                $year = (int)($trip['collectejaar'] ?? 2026);
+                $this->collectionYears[$year] ??= ['jaar'=>$year, 'kilometervergoeding'=>'0.30', 'is_huidig'=>0];
+            }
+        }
+        return 0;
+    }
     public function prepare(string $query, array $options = []): PDOStatement|false { return new LiveMemoryStatement($this, $query); }
     public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false { $s = $this->prepare($query); $s->execute(); return $s; }
     public function run(string $sql, array $p): array {
         $sql = preg_replace('/\s+/', ' ', trim($sql));
+        if (str_starts_with($sql, 'INSERT IGNORE INTO afstort_settings')) return [];
+        if (str_starts_with($sql, 'SHOW COLUMNS FROM ritten')) return [['Field'=>'collectejaar']];
         if (str_starts_with($sql, 'SELECT data, revision FROM afstort_settings')) return [$this->settings];
+        if (str_starts_with($sql, 'SELECT jaar, kilometervergoeding, is_huidig FROM collectejaren')) return array_values($this->collectionYears);
+        if (str_starts_with($sql, 'INSERT IGNORE INTO collectejaren')) {
+            $this->collectionYears[$p[0]] ??= ['jaar'=>$p[0], 'kilometervergoeding'=>$p[1], 'is_huidig'=>$p[2]];
+            return [];
+        }
+        if (str_starts_with($sql, 'INSERT INTO collectejaren')) {
+            $this->collectionYears[$p[0]] = ['jaar'=>$p[0], 'kilometervergoeding'=>$p[1], 'is_huidig'=>$this->collectionYears[$p[0]]['is_huidig'] ?? 0];
+            return [];
+        }
+        if (str_starts_with($sql, 'UPDATE collectejaren SET is_huidig=1')) {
+            $this->collectionYears[$p[0]]['is_huidig'] = 1; return [];
+        }
         if (str_starts_with($sql, 'SELECT beschikbare_jaren FROM chauffeurs')) {
             $rows = array_values(array_filter($this->drivers, fn($d) => $d['naam'] === $p[0]));
             return array_map(fn($d) => ['beschikbare_jaren'=>$d['beschikbare_jaren']], $rows);
@@ -275,3 +302,11 @@ $receiptEdit['removeReceipts']=['office-receipt'];
 live2_mutate($correctDb,$receiptEdit,$office,[],'key');
 liveCheck(!live2_trip($correctDb->trips[1],$correctDb->drivers,$correctDb->extras[1])['receipts'], 'Admin could not remove completed-trip receipt');
 echo "Completed trip attachment checks passed.\n";
+
+$declineDb = new LiveMemoryPDO();
+$declineDb->trips[1] = $row;
+$declineDb->offers[1] = ['rit_id'=>1, 'chauffeur_naam'=>'Anna', 'chauffeur_email'=>'anna@example.test', 'status'=>'aangeboden'];
+$ownOfferState = live2_state($declineDb, $driver, 'test-key');
+liveCheck(str_contains($ownOfferState['trips'][0]['afwijsUrl'], 'declineRit.php?rit=1') && str_contains($ownOfferState['trips'][0]['afwijsUrl'], '&token='), 'Own offered trip missing signed decline link');
+liveCheck(live2_state($declineDb, $office, 'test-key')['trips'][0]['afwijsUrl']==='', 'Decline link exposed to other account');
+echo "Portal decline link checks passed.\n";

@@ -37,7 +37,7 @@
     target.innerHTML = rows.length ? rows.map(person => {
       const canDelete = role !== 'admin' && admin && (role === 'employee' ? String(person.id) !== document.body.dataset.userId : !Number(person.is_medewerker));
       const location = [person.postcode, person.woonplaats].map(value => String(value || '').trim()).filter(Boolean).join(' ');
-      return `<li><div><strong>${escape(person.naam)}</strong><span>${escape([location, person.email, person.mobiel].filter(Boolean).join(' · '))}</span>${role === 'driver' ? `<span>${person.actief ? 'Dit jaar actief' : 'Dit jaar niet actief'} (${escape(person.actief_jaar)})</span>` : ''}</div>${admin ? `<div class="users-row-actions">${role === 'driver' ? `<button type="button" data-user-action="profile" data-id="${escape(person.id)}">06-nummer / actief</button>` : ''}<button type="button" data-user-action="recovery" data-id="${escape(person.id)}" data-name="${escape(person.naam)}">Stuur 2FA-herstelmail</button>${canDelete ? `<button type="button" class="users-delete" data-user-action="delete" data-role="${role}" data-id="${escape(person.id)}" data-name="${escape(person.naam)}">Verwijder</button>` : ''}</div>` : ''}</li>`;
+      return `<li><div><strong>${escape(person.naam)}</strong><span>${escape([location, person.email, person.mobiel].filter(Boolean).join(' · '))}</span>${role === 'driver' ? `<span>${person.actief ? 'Dit jaar actief' : 'Dit jaar niet actief'} (${escape(person.actief_jaar)})</span>` : ''}</div>${admin ? `<div class="users-row-actions">${role === 'driver' ? `<button type="button" data-user-action="profile" data-id="${escape(person.id)}">06-nummer / actieve jaren</button>` : ''}<button type="button" data-user-action="recovery" data-id="${escape(person.id)}" data-name="${escape(person.naam)}">Stuur 2FA-herstelmail</button>${canDelete ? `<button type="button" class="users-delete" data-user-action="delete" data-role="${role}" data-id="${escape(person.id)}" data-name="${escape(person.naam)}">Verwijder</button>` : ''}</div>` : ''}</li>`;
     }).join('') : `<li>Geen ${role === 'driver' ? 'chauffeurs' : 'medewerkers'} gevonden.</li>`;
   }
   async function loadUsers() {
@@ -52,14 +52,50 @@
     });
   }
   let settings;
+  function renderYears() {
+    $('#portal-current-year').textContent = 'Huidig collectejaar: ' + settings.currentYear;
+    $('#collection-years-list').innerHTML = Object.keys(settings.years).sort((a, b) => b - a).map(year => {
+      const current = Number(year) === settings.currentYear;
+      const status = current ? 'Huidig jaar' : Number(year) < settings.currentYear ? 'Eerder jaar' : 'Voorbereid';
+      return `<tr${current ? ' class="current-collection-year"' : ''}><th scope="row">${escape(year)}</th><td>${status}</td><td>€ ${escape(settings.years[year].kilometervergoeding.replace('.', ','))}</td><td><div class="users-row-actions"><button type="button" data-year-edit="${escape(year)}">Vergoeding wijzigen</button>${current ? '' : `<button type="button" data-year-current="${escape(year)}">Maak huidig</button>`}</div></td></tr>`;
+    }).join('');
+  }
+  function newYear() {
+    const form = $('#portal-settings-form');
+    form.elements.year.value = Math.min(2099, Math.max(...Object.keys(settings.years).map(Number)) + 1);
+    form.elements.rate.value = settings.years[settings.currentYear].kilometervergoeding.replace('.', ',');
+    $('#collection-year-form-title').textContent = 'Collectejaar toevoegen';
+  }
+  $('#collection-year-add')?.addEventListener('click', () => { if (settings && !busy) newYear(); });
+  $('#collection-years-list')?.addEventListener('click', async event => {
+    const edit = event.target.closest('[data-year-edit]');
+    const current = event.target.closest('[data-year-current]');
+    if (!admin || busy || !settings) return;
+    if (edit) {
+      const form = $('#portal-settings-form');
+      form.elements.year.value = edit.dataset.yearEdit;
+      form.elements.rate.value = settings.years[edit.dataset.yearEdit].kilometervergoeding.replace('.', ',');
+      $('#collection-year-form-title').textContent = 'Vergoeding wijzigen voor ' + edit.dataset.yearEdit;
+      form.elements.rate.focus();
+    } else if (current) {
+      busy = true; current.disabled = true;
+      try {
+        const result = await request('', {operation:'setCurrent', year:current.dataset.yearCurrent, revision:settings.revision}, 'index2.php?action=settings');
+        settings = result.preferences; renderYears();
+        notice('Huidig collectejaar: ' + settings.currentYear + '. Alle andere jaren blijven bewaard.');
+        window.dispatchEvent(new Event('portal-settings-changed'));
+        await loadUsers();
+      } catch (error) { notice(error.message, true); }
+      finally { busy = false; current.disabled = false; }
+    }
+  });
   async function loadManagement() {
     if (!admin) return;
     try {
       const result=await request('',undefined,'index2.php?action=management');
       renderList(result.administrators,'admin'); settings=result.preferences;
-      const form=$('#portal-settings-form'); form.elements.year.value=settings.currentYear;
-      form.elements.rate.value=settings.years[settings.currentYear].kilometervergoeding.replace('.',',');
-      form.querySelector('button').disabled=false;
+      renderYears(); newYear();
+      $('#portal-settings-form').querySelector('button[type="submit"]').disabled=false;
     } catch(error) { notice(error.message,true); }
   }
   $('#preferences')?.addEventListener('click', () => { loadManagement(); loadUsers(); });
@@ -68,20 +104,22 @@
   });
   $('#portal-settings-form')?.addEventListener('submit',async event=>{
     event.preventDefault(); if(busy || !admin || !settings) return;
-    const form=event.currentTarget; busy=true; form.querySelector('button').disabled=true;
+    const form=event.currentTarget; busy=true; form.querySelector('button[type="submit"]').disabled=true;
     try {
-      const result=await request('',{year:form.elements.year.value,rate:form.elements.rate.value,revision:settings.revision},'index2.php?action=settings');
-      settings=result.preferences; notice('Instellingen opgeslagen.');
+      const result=await request('',{operation:'saveYear',year:form.elements.year.value,rate:form.elements.rate.value,revision:settings.revision},'index2.php?action=settings');
+      settings=result.preferences; renderYears(); notice('Collectejaar ' + form.elements.year.value + ' opgeslagen. Huidig jaar: ' + settings.currentYear + '.');
       window.dispatchEvent(new Event('portal-settings-changed'));
       await loadUsers();
     } catch(error) { notice(error.message,true); }
-    finally {busy=false;form.querySelector('button').disabled=false;}
+    finally {busy=false;form.querySelector('button[type="submit"]').disabled=false;}
   });
   const tabs = [$('#users-drivers-tab'), $('#users-employees-tab'),$('#users-admins-tab'),$('#users-settings-tab'),$('#users-templates-tab')].filter(Boolean);
   function editProfile(person) {
     const form = $('#live-user-form'); form.dataset.role = 'profile'; form.dataset.id = person.id; form.dataset.year = person.actief_jaar;
     $('#user-editor-title').textContent = 'Chauffeur: ' + person.naam;
-    form.innerHTML = `<p>Actief collectejaar: ${escape(person.actief_jaar)}</p><label class="field">06-nummer (optioneel)<input name="mobiel" type="tel" maxlength="20" autocomplete="tel" value="${escape(person.mobiel)}" placeholder="06-12345678"></label><label><input name="active" type="checkbox" ${person.actief ? 'checked' : ''}> Dit jaar actief</label><p class="form-error" role="status" hidden></p><div class="form-actions"><button type="button" data-user-close>Sluiten</button><button type="submit" class="primary">Opslaan</button></div>`;
+    const availableYears = JSON.parse(person.beschikbare_jaren || '[]');
+    const years = (person.collectejaren || [person.actief_jaar]).map(Number).sort((a, b) => a - b);
+    form.innerHTML = `<label class="field">06-nummer (optioneel)<input name="mobiel" type="tel" maxlength="20" autocomplete="tel" value="${escape(person.mobiel)}" placeholder="06-12345678"></label><fieldset><legend>Actieve collectejaren</legend>${years.map(year => `<label><input name="years" type="checkbox" value="${escape(year)}" ${availableYears.includes(year) ? 'checked' : ''}> Actief in ${escape(year)}</label>`).join('')}</fieldset><p>Vink een jaar uit om nieuwe toewijzingen voor dat jaar te stoppen. Bestaande ritten blijven behouden. Nieuwe jaren maak je aan bij Collectejaren.</p><p class="form-error" role="status" hidden></p><div class="form-actions"><button type="button" data-user-close>Sluiten</button><button type="submit" class="primary">Opslaan</button></div>`;
     dirty = false; $('#user-editor').showModal();
   }
   function activate(tab) {
@@ -137,7 +175,7 @@
     status.hidden = false; status.textContent = role === 'profile' ? 'Chauffeurgegevens worden opgeslagen…' : 'Gebruiker wordt aangemaakt…';
     try {
       if (role === 'profile') {
-        const result = await request('', { id:form.dataset.id, year:form.dataset.year, mobiel:form.elements.mobiel.value.trim(), active:form.elements.active.checked }, 'index2.php?action=driverProfile');
+        const result = await request('', { id:form.dataset.id, year:form.dataset.year, mobiel:form.elements.mobiel.value.trim(), years:Array.from(form.querySelectorAll('input[name="years"]:checked'), input => Number(input.value)) }, 'index2.php?action=driverProfile');
         dirty = false; await loadUsers(); notice(result.message); $('#user-editor').close();
         window.dispatchEvent(new Event('portal-settings-changed')); return;
       }

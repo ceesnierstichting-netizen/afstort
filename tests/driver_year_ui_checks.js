@@ -1,0 +1,21 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(require('node:path').join(__dirname, '../live2/users.js'), 'utf8');
+const elements = new Map();
+const element = key => {
+  if (!elements.has(key)) elements.set(key, {dataset:{}, content:'token', addEventListener(){}, showModal(){this.open=true;}});
+  return elements.get(key);
+};
+const context = vm.createContext({document:{body:{dataset:{admin:'1'}}, querySelector:element}, window:{addEventListener(){}}});
+vm.runInContext(source.replace(/  loadUsers\(\);\s*\}\)\(\);\s*$/, '  globalThis.editProfile = editProfile;\n})();'), context);
+context.editProfile({id:2, naam:'Anna', actief_jaar:2026, collectejaren:[2026,2027], beschikbare_jaren:'[2027]', mobiel:''});
+let html = element('#live-user-form').innerHTML;
+assert.match(html, /value="2026" > Actief in 2026/);
+assert.match(html, /value="2027" checked> Actief in 2027/);
+assert.match(html, /Bestaande ritten blijven behouden/);
+assert.equal(element('#user-editor').open, true);
+context.editProfile({id:2, naam:'Anna', actief_jaar:2026, collectejaren:[2026,2027], beschikbare_jaren:'[]'});
+html = element('#live-user-form').innerHTML;
+assert.doesNotMatch(html, / checked/);
+console.log('Driver year UI checks passed.');

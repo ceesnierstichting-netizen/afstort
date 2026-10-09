@@ -522,6 +522,7 @@ if (isset($_GET['action'])) {
         foreach ($chauffeurs as &$chauffeur) {
             $chauffeur['woonplaats'] = chauffeurWoonplaats($chauffeur['postcode'] ?? '');
             $chauffeur['actief_jaar'] = (int)$portalSettings['currentYear'];
+            $chauffeur['collectejaren'] = array_map('intval', array_keys($portalSettings['years']));
             $chauffeur['actief'] = in_array($chauffeur['actief_jaar'], json_decode($chauffeur['beschikbare_jaren'] ?? '[]', true) ?: [], true);
         }
         unset($chauffeur);

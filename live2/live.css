@@ -135,6 +135,14 @@
 #users-management { width: min(1050px, calc(100vw - 32px)); }
 #users-management .users-section { border: 0; margin-bottom: 0; border-radius: 0; }
 .users-section [hidden] { display: none !important; }
+.collection-years-scroll { overflow-x: auto; margin: 20px 0; }
+.collection-years-table { border-collapse: collapse; width: 100%; text-align: left; }
+.collection-years-table th, .collection-years-table td { padding: 12px; border-bottom: 1px solid var(--border); }
+.collection-years-table thead { background: #f7f9fc; }
+.current-collection-year { background: #edf7ee; }
+.collection-years-table .users-row-actions { justify-content: flex-start; flex-wrap: wrap; }
+form[data-kind="finish"] .form-grid > .field:not(.wide),
+form[data-kind="correct_done"] .form-grid > .field:not(.wide) { align-self: end; }
 .users-tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
 .users-tabs button { border-radius: 9px 9px 0 0; }
 .users-tabs [aria-selected="true"] { background: #e4f4ec; border-color: #23aa8b; }

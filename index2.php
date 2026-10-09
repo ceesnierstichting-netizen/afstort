@@ -65,7 +65,7 @@ try {
         <button id="users-drivers-tab" type="button" role="tab" aria-controls="users-drivers" aria-selected="true">Chauffeurs</button>
         <button id="users-employees-tab" type="button" role="tab" aria-controls="users-employees" aria-selected="false" tabindex="-1">Medewerkers</button>
         <button id="users-admins-tab" type="button" role="tab" aria-controls="users-admins" aria-selected="false" tabindex="-1">Administrators</button>
-        <button id="users-settings-tab" type="button" role="tab" aria-controls="users-settings" aria-selected="false" tabindex="-1">Instellingen</button>
+        <button id="users-settings-tab" type="button" role="tab" aria-controls="users-settings" aria-selected="false" tabindex="-1">Collectejaren</button>
         <button id="users-templates-tab" type="button" role="tab" aria-controls="users-templates" aria-selected="false" tabindex="-1">E-mailteksten</button>
       </div>
       <p id="users-notice" role="status" hidden></p>
@@ -79,7 +79,9 @@ try {
       </div>
       <div id="users-admins" role="tabpanel" aria-labelledby="users-admins-tab" hidden><p>Deze accounts hebben Full Access.</p><ul id="users-admin-list" class="users-list"><li>Administrators laden…</li></ul></div>
       <div id="users-settings" role="tabpanel" aria-labelledby="users-settings-tab" hidden>
-        <form id="portal-settings-form"><p>Het actuele jaar geldt voor nieuwe ritten in beide portalen. Bestaande ritten behouden hun jaar. De vergoeding geldt voor de rapporten van het gekozen jaar.</p><div class="form-grid"><label class="field">Actueel collectejaar<input name="year" type="number" min="2000" max="2099" required></label><label class="field">Kilometervergoeding (€ per km)<input name="rate" type="text" inputmode="decimal" required></label></div><button type="submit" class="primary" disabled>Instellingen opslaan</button></form>
+        <h3>Collectejaren</h3><p id="portal-current-year"></p><p>Elk collectejaar blijft bewaard met zijn ritten en kilometervergoeding. Kies bovenaan bij Collectejaar een eerder jaar om terug te kijken en rapporten te openen.</p>
+        <div class="collection-years-scroll"><table class="collection-years-table"><thead><tr><th scope="col">Jaar</th><th scope="col">Status</th><th scope="col">Vergoeding per km</th><th scope="col">Acties</th></tr></thead><tbody id="collection-years-list"><tr><td colspan="4">Collectejaren laden…</td></tr></tbody></table></div>
+        <form id="portal-settings-form"><h3 id="collection-year-form-title">Collectejaar toevoegen</h3><p>Toevoegen verandert het huidige jaar niet. Gebruik daarna ‘Maak huidig’ in het overzicht om over te stappen.</p><div class="form-grid"><label class="field">Collectejaar<input name="year" type="number" min="2000" max="2099" required></label><label class="field">Kilometervergoeding (€ per km)<input name="rate" type="text" inputmode="decimal" required></label></div><div class="form-actions"><button type="button" id="collection-year-add">Nieuw jaar</button><button type="submit" class="primary" disabled>Collectejaar opslaan</button></div></form>
       </div>
       <div id="users-templates" role="tabpanel" aria-labelledby="users-templates-tab" hidden>
         <p>Deze teksten worden door beide portalen gebruikt voor nieuwe mails. Invulvelden tussen vierkante haken worden automatisch ingevuld; laat ze staan. HTML-opmaak blijft behouden. Opslaan verstuurt geen mail en verandert eerder klaargezette mails niet.</p>

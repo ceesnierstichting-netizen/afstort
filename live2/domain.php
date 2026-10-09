@@ -73,7 +73,7 @@ function live2_visible(PDO $pdo, array $row, array $user): bool {
         || magChauffeurRitVrijKiezen($pdo, (int)$row['id'], $user['name']);
 }
 
-function live2_state(PDO $pdo, array $user): array {
+function live2_state(PDO $pdo, array $user, string $linkKey = ''): array {
     $drivers = $pdo->query('SELECT id, naam, email, fullAccess, is_medewerker, IBAN, postcode, beschikbare_jaren FROM chauffeurs')->fetchAll();
     $extras = [];
     foreach ($pdo->query('SELECT * FROM rit_live_ui')->fetchAll() as $extra) $extras[$extra['rit_id']] = $extra;
@@ -83,6 +83,8 @@ function live2_state(PDO $pdo, array $user): array {
         $trip = live2_trip($row, $drivers, $extras[$row['id']] ?? null);
         $offer = isUnassignedChauffeurValue($row['chauffeur'] ?? '') ? getOpenstaandeRitAanbieding($pdo, (int)$row['id']) : null;
         $trip['aangebodenChauffeur'] = $offer ? (string)$offer['chauffeur_naam'] : '';
+        $trip['afwijsUrl'] = $offer && $linkKey !== '' && strcasecmp(trim((string)$offer['chauffeur_naam']), trim($user['name'])) === 0
+            ? afstort_decline_url((int)$row['id'], (string)$offer['chauffeur_naam'], $linkKey) : '';
         if (!$user['reportAll'] && $trip['chauffeurId'] !== $user['id']) unset($trip['chauffeurIban']);
         foreach ($trip['receipts'] as &$receipt) unset($receipt['data']);
         unset($receipt);
@@ -259,7 +261,19 @@ function live2_dispatch(PDO $pdo, int $id, string $batch, ?callable $sendMail = 
     } catch (Throwable $error) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $error; }
 }
 
-function live2_offer(PDO $pdo, int $id, ?callable $sendMail = null): string {
+function live2_preferred_driver(PDO $pdo, string $driverId, int $year): array {
+    $rows = $pdo->query('SELECT id, naam, email, fullAccess, is_medewerker, IBAN, postcode FROM chauffeurs')->fetchAll();
+    foreach (beta_selectable_drivers($rows) as $driver) {
+        if ($driver['id'] !== $driverId || strcasecmp(trim($driver['name']), 'Admin') === 0) continue;
+        if (!chauffeur_beschikbaar($pdo, $driver['name'], $year)) return ['status'=>'error', 'message'=>'De gekozen chauffeur is niet actief in het collectejaar van deze rit.'];
+        if (!filter_var($driver['email'], FILTER_VALIDATE_EMAIL)) return ['status'=>'error', 'message'=>'De gekozen chauffeur heeft geen geldig e-mailadres.'];
+        assertNotMedewerkerRecipient($pdo, $driver['name'], $driver['email']);
+        return ['status'=>'ok', 'chauffeurNaam'=>$driver['name'], 'chauffeurEmail'=>$driver['email'], 'afstandKm'=>null];
+    }
+    return ['status'=>'error', 'message'=>'De gekozen chauffeur is niet beschikbaar. Kies een andere chauffeur of de dichtstbij wonende.'];
+}
+
+function live2_offer(PDO $pdo, int $id, ?callable $sendMail = null, ?string $linkKey = null): string {
     $batch = null;
     $pdo->beginTransaction();
     try {
@@ -272,25 +286,35 @@ function live2_offer(PDO $pdo, int $id, ?callable $sendMail = null): string {
         $query = $pdo->prepare('SELECT * FROM rit_live_outbox WHERE rit_id = ? AND batch = ? ORDER BY id');
         $query->execute([$id, $extra['batch']]);
         $mails = $query->fetchAll();
-        $contactSent = false; $proposal = null;
+        $contactSent = false; $proposal = null; $preferredDriverId = '';
         foreach ($mails as $mail) {
-            if ($mail['kind'] === 'Aanvraag' && $mail['status'] === 'sent') $contactSent = true;
+            if ($mail['kind'] === 'Aanvraag') {
+                if ($mail['status'] === 'sent') $contactSent = true;
+                $payload = json_decode($mail['payload'], true, 512, JSON_THROW_ON_ERROR);
+                $preferredDriverId = (string)($payload['preferredDriverId'] ?? '');
+            }
             if ($mail['kind'] === 'Chauffeurvoorstel') $proposal = $mail;
         }
         if (!$contactSent) { $pdo->commit(); return ''; }
         if (!$proposal) {
-            $selected = selectNearestChauffeur($pdo, $id);
+            $selected = $preferredDriverId !== ''
+                ? live2_preferred_driver($pdo, $preferredDriverId, (int)$row['collectejaar'])
+                : selectNearestChauffeur($pdo, $id);
             if (($selected['status'] ?? '') !== 'ok') {
                 $error = 'De rit is opgeslagen, maar er is nog geen chauffeur aangeschreven: ' . ($selected['message'] ?? 'Chauffeurselectie mislukt.');
                 $pdo->prepare('UPDATE rit_live_ui SET mail_error=?, revision=revision+1 WHERE rit_id=?')->execute([$error, $id]);
-                logRitEmail($pdo, $id, 'Chauffeurvoorstel', '-', 'Automatische chauffeurselectie', 'mislukt', $error);
+                logRitEmail($pdo, $id, 'Chauffeurvoorstel', '-', $preferredDriverId !== '' ? 'Gekozen chauffeur' : 'Automatische chauffeurselectie', 'mislukt', $error);
                 $pdo->commit(); return $error;
             }
             $name = $selected['chauffeurNaam'];
             assertNotMedewerkerRecipient($pdo, $name, $selected['chauffeurEmail']);
             $escape = function ($value) { return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8'); };
-            $decline = 'https://nierstichtingnederland.nl/afstort/declineRit.php?rit=' . $id . '&chauffeur=' . rawurlencode($name);
-            $html = 'Beste ' . $escape($name) . ',<br><br>Je bent geselecteerd als <b>dichtstbijzijnde chauffeur</b> voor een afhaalopdracht.'
+            if ($linkKey === null) throw new RuntimeException('De sleutel voor beveiligde afwijslinks ontbreekt.');
+            $decline = afstort_decline_url($id, $name, $linkKey);
+            $selectionText = $preferredDriverId !== ''
+                ? 'Het collectieteam vraagt of je deze afhaalopdracht wilt oppakken.'
+                : 'Je bent geselecteerd als <b>dichtstbijzijnde chauffeur</b> voor een afhaalopdracht.';
+            $html = 'Beste ' . $escape($name) . ',<br><br>' . $selectionText
                 . '<br>Collectegebied: <b>' . $escape($row['collectegebied']) . '</b><br>Postcode/plaats: <b>' . $escape($row['postcodePlaats']) . '</b>'
                 . '<br><br>Als je deze rit gaat uitvoeren, log dan in op het <a href="https://nierstichtingnederland.nl/afstort">afstortportaal</a> om de rit op jouw naam te zetten.'
                 . '<br><br>Kun je deze rit niet uitvoeren? <a href="' . $escape($decline) . '">Ik kan deze rit niet uitvoeren</a>.'
@@ -316,7 +340,7 @@ function live2_mutate(PDO $pdo, array $input, array $user, array $uploads, strin
     $batch = null;
     $pdo->beginTransaction();
     try {
-        $extra = null; $requestKey = null;
+        $extra = null; $requestKey = null; $preferredDriverId = '';
         if ($action === 'create') {
             if (!$user['office']) throw new DomainException('Alleen kantoor kan ritten aanmaken.');
             $requestKey = beta_text($input, 'requestKey', 32);
@@ -328,11 +352,16 @@ function live2_mutate(PDO $pdo, array $input, array $user, array $uploads, strin
                 if ($previous['owner'] !== $user['id']) throw new DomainException('Ongeldig verzoek.');
                 $pdo->commit();
                 if ($previous['batch']) live2_dispatch($pdo, (int)$previous['rit_id'], $previous['batch'], $sendMail);
-                return 'Deze rit was al aangemaakt. ' . live2_offer($pdo, (int)$previous['rit_id'], $sendMail);
+                return 'Deze rit was al aangemaakt. ' . live2_offer($pdo, (int)$previous['rit_id'], $sendMail, $documentKey);
             }
             $state = beta_initial_state(); $state['preferences'] = portal_settings($pdo); $state['trips'] = [];
             beta_apply($state, $input, $user);
             $trip = array_values($state['trips'])[0];
+            $preferredDriverId = beta_text($input, 'preferredDriverId', 20, false);
+            if ($preferredDriverId !== '') {
+                $preferred = live2_preferred_driver($pdo, $preferredDriverId, (int)$trip['collectejaar']);
+                if ($preferred['status'] !== 'ok') throw new DomainException($preferred['message']);
+            }
             $row = $trip; $row['opmerking'] = $trip['contactOpmerking'];
             $row['chauffeur'] = ''; $row['status'] = '-';
             $row['soort'] = ['Munten'=>'alleen muntgeld', 'Biljetten'=>'alleen briefgeld', 'Munten en biljetten'=>'munt- en briefgeld'][$trip['soort']];
@@ -358,7 +387,7 @@ function live2_mutate(PDO $pdo, array $input, array $user, array $uploads, strin
             if ($action === 'retry_mail') {
                 if (!beta_can_edit($trip, $user) || !$extra || !$extra['batch'] || !hash_equals($extra['version'], ritVersion($row))) throw new DomainException('Deze verzending kan niet meer worden herhaald.');
                 $pdo->commit(); live2_dispatch($pdo, $id, $extra['batch'], $sendMail);
-                $offerMessage = live2_offer($pdo, $id, $sendMail);
+                $offerMessage = live2_offer($pdo, $id, $sendMail, $documentKey);
                 return $offerMessage !== '' ? $offerMessage : 'Verzendstatus gecontroleerd. Alleen eerder mislukte berichten worden opnieuw aangeboden.';
             }
             if ($action === 'correct_done') {
@@ -451,6 +480,7 @@ function live2_mutate(PDO $pdo, array $input, array $user, array $uploads, strin
         if ($kind !== '') {
             $batch = bin2hex(random_bytes(16));
             foreach (live2_mails($pdo, $trip, $kind, $documentKey) as $mail) {
+                if ($action === 'create') $mail['preferredDriverId'] = $preferredDriverId;
                 $pdo->prepare('INSERT INTO rit_live_outbox (id, rit_id, batch, kind, version, payload) VALUES (?, ?, ?, ?, ?, ?)')
                     ->execute([bin2hex(random_bytes(16)), $id, $batch, $kind, ritVersion($row), json_encode($mail, JSON_THROW_ON_ERROR)]);
             }
@@ -460,6 +490,6 @@ function live2_mutate(PDO $pdo, array $input, array $user, array $uploads, strin
         $pdo->commit();
     } catch (Throwable $error) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $error; }
     if ($batch) { live2_dispatch($pdo, $id, $batch, $sendMail); $message .= ' Controleer de verzendstatus bij de rit.'; }
-    if ($action === 'create') $message .= ' ' . live2_offer($pdo, $id, $sendMail);
+    if ($action === 'create') $message .= ' ' . live2_offer($pdo, $id, $sendMail, $documentKey);
     return $message;
 }

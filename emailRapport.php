@@ -29,7 +29,7 @@ $reportWhere = $ownReport
 $reportParams = $ownReport ? [(int)$_SESSION['user_id']] : [];
 $rittenQuery = $pdo->prepare("
     SELECT r.id, r.collectegebied, r.gebiedsnummer, r.contactpersoon, r.postcodePlaats, r.chauffeur, r.status,
-           r.aangemaakt_door, r.aangemaakt_door_email
+           r.aangemaakt_door, r.aangemaakt_door_email, r.verwachtBedrag, r.gestort
     FROM ritten r
     $reportWhere
     ORDER BY r.id DESC
@@ -58,6 +58,8 @@ $aanbiedingenQuery->execute($reportParams);
 $aanbiedingen = $aanbiedingenQuery->fetchAll(PDO::FETCH_ASSOC);
 
 $eventsPerRit = [];
+$openOffers = [];
+$rejectedTrips = [];
 foreach ($emailRows as $event) {
     $eventsPerRit[(int)$event['rit_id']][] = [
         'datum' => $event['verzonden_op'],
@@ -69,6 +71,8 @@ foreach ($emailRows as $event) {
 }
 foreach ($aanbiedingen as $aanbieding) {
     $ritId = (int)$aanbieding['rit_id'];
+    if ($aanbieding['status'] === 'aangeboden') $openOffers[$ritId] = true;
+    if ($aanbieding['status'] === 'afgewezen') $rejectedTrips[$ritId] = true;
     $eventsPerRit[$ritId][] = [
         'datum' => $aanbieding['aangeboden_op'],
         'soort' => 'Chauffeurvoorstel geregistreerd',
@@ -103,6 +107,12 @@ function rapportDatum($value) {
     $timestamp = strtotime((string)$value);
     return $timestamp ? date('d-m-Y H:i:s', $timestamp) : (string)$value;
 }
+
+function rapportBedrag($value) {
+    if ($value === null || trim((string)$value) === '') return '-';
+    $number = str_replace(',', '.', trim((string)$value));
+    return is_numeric($number) ? '€ ' . number_format((float)$number, 2, ',', '.') : (string)$value;
+}
 ?>
 <!doctype html>
 <html lang="nl">
@@ -124,6 +134,9 @@ function rapportDatum($value) {
     th { position: sticky; top: 0; background: #f8fafc; color: #334155; }
     .rit-start td { border-top: 3px solid #cbd5e1; }
     .muted { color: #64748b; }
+    .bedrag { text-align: right; white-space: nowrap; }
+    .retry-offer { margin-top: 8px; }
+    .retry-offer button { cursor: pointer; padding: 6px 8px; }
     .status-verzonden, .status-aangeboden { color: #166534; font-weight: 700; }
     .status-mislukt, .status-afgewezen { color: #b91c1c; font-weight: 700; }
     @media print { body { padding: 0; background: white; } .actions { display: none; } .table-wrap { box-shadow: none; } th { position: static; } }
@@ -132,7 +145,7 @@ function rapportDatum($value) {
 <body>
 <main>
   <h1><?= $ownReport ? 'Emailoverzicht van mijn ritten' : 'Emailoverzicht' ?></h1>
-  <p class="intro">Per invoerregel staan hieronder de geregistreerde e-mails en chauffeurgebeurtenissen met datum en tijd. Contactmails van vóór de ingebruikname van dit logboek zijn niet achteraf te reconstrueren.</p>
+  <p class="intro">Per invoerregel staan hieronder de geregistreerde e-mails en chauffeurgebeurtenissen met datum en tijd, het verwachte totaalbedrag en het gestorte bedrag aan munten. De bedragen tonen de huidige opgeslagen waarden van de rit. Contactmails van vóór de ingebruikname van dit logboek zijn niet achteraf te reconstrueren.</p>
   <div class="actions">
     <a href="<?= htmlspecialchars($returnTo, ENT_QUOTES, 'UTF-8') ?>">Terug naar overzicht</a>
     <button type="button" onclick="window.print()">Afdrukken / opslaan als PDF</button>
@@ -142,11 +155,12 @@ function rapportDatum($value) {
       <thead>
         <tr>
           <th>Invoerregel</th><th>Ingevoerd door</th><th>Collectegebied</th><th>Contactpersoon</th><th>Ritstatus</th>
+          <th class="bedrag">Verwacht totaalbedrag</th><th class="bedrag">Gestort bedrag aan munten</th>
           <th>Datum en tijd</th><th>Gebeurtenis / e-mail</th><th>Ontvanger</th><th>Resultaat</th><th>Details</th>
         </tr>
       </thead>
       <tbody>
-      <?php if (!$ritten): ?><tr><td colspan="10">Geen ritten gevonden.</td></tr><?php endif; ?>
+      <?php if (!$ritten): ?><tr><td colspan="12">Geen ritten gevonden.</td></tr><?php endif; ?>
       <?php foreach ($ritten as $rit): ?>
         <?php $events = $eventsPerRit[(int)$rit['id']] ?? []; ?>
         <?php if (!$events): $events = [[ 'datum' => null, 'soort' => 'Nog geen e-mails geregistreerd', 'ontvanger' => '-', 'status' => '-', 'details' => null ]]; endif; ?>
@@ -156,7 +170,16 @@ function rapportDatum($value) {
           <td><?php echo rapportH($rit['aangemaakt_door'] ?: 'Onbekend (bestaande regel)'); ?><?php if (!empty($rit['aangemaakt_door_email'])): ?><br><span class="muted"><?php echo rapportH($rit['aangemaakt_door_email']); ?></span><?php endif; ?></td>
           <td><?php echo rapportH($rit['collectegebied']); ?><br><span class="muted"><?php echo rapportH($rit['gebiedsnummer']); ?> · <?php echo rapportH($rit['postcodePlaats']); ?></span></td>
           <td><?php echo rapportH($rit['contactpersoon']); ?></td>
-          <td><?php echo rapportH($rit['status']); ?><br><span class="muted">Chauffeur: <?php echo rapportH($rit['chauffeur']); ?></span></td>
+          <td><?php echo rapportH($rit['status']); ?><br><span class="muted">Chauffeur: <?php echo rapportH($rit['chauffeur']); ?></span>
+            <?php if ($index === 0 && $allTripsReport && isset($rejectedTrips[(int)$rit['id']]) && !isset($openOffers[(int)$rit['id']]) && isUnassignedChauffeurValue($rit['chauffeur']) && $rit['status'] !== 'Afgehandeld'): ?>
+            <form class="retry-offer" method="post" action="declineRit.php?rit=<?= (int)$rit['id'] ?>&amp;retry=1">
+              <input type="hidden" name="csrf" value="<?= rapportH(afstort_csrf_token()) ?>">
+              <button type="submit">Volgende chauffeur aanbieden</button>
+            </form>
+            <?php endif; ?>
+          </td>
+          <td class="bedrag"><?php echo rapportH(rapportBedrag($rit['verwachtBedrag'])); ?></td>
+          <td class="bedrag"><?php echo rapportH(rapportBedrag($rit['gestort'])); ?></td>
           <td><?php echo rapportH(rapportDatum($event['datum'])); ?></td>
           <td><?php echo rapportH($event['soort']); ?></td>
           <td><?php echo rapportH($event['ontvanger']); ?></td>
