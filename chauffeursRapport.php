@@ -18,9 +18,11 @@ portal_settings_schema($pdo);
 $settings = portal_settings($pdo);
 $year = filter_var($_GET['year'] ?? $settings['currentYear'], FILTER_VALIDATE_INT);
 if (!$year || !isset($settings['years'][$year])) { http_response_code(422); exit('Onbekend collectejaar.'); }
-$chauffeurs = $pdo->query("SELECT naam, email, postcode, IBAN, mobiel, beschikbare_jaren FROM chauffeurs
-    WHERE COALESCE(is_medewerker, 0) = 0 AND COALESCE(fullAccess, 0) = 0 AND naam <> 'Admin'
-    ORDER BY naam ASC")->fetchAll(PDO::FETCH_ASSOC);
+$query = $pdo->prepare("SELECT naam, email, postcode, IBAN, mobiel, beschikbare_jaren FROM chauffeurs
+    WHERE (COALESCE(is_medewerker, 0) = 0 OR naam = ?) AND naam <> 'Admin'
+    ORDER BY naam ASC");
+$query->execute([SELECTABLE_MEDEWERKER_CHAUFFEUR]);
+$chauffeurs = $query->fetchAll(PDO::FETCH_ASSOC);
 $chauffeurs = array_values(array_filter($chauffeurs, fn($row) => in_array($year, json_decode($row['beschikbare_jaren'] ?? '[]', true) ?: [], true)));
 function chauffeursRapportEscape($value): string {
     return htmlspecialchars((string)($value ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
