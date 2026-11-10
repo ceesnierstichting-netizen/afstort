@@ -261,7 +261,7 @@
     document.querySelectorAll('[data-trip]').forEach(b => b.disabled = true);
     try {
       const data = new FormData();
-        data.set('previewKind', form.dataset.kind); data.set('testView',view); data.set('action','claim'); data.set('id',t.id); data.set('revision',t.revision);
+      data.set('testView',view); data.set('action','claim'); data.set('id',t.id); data.set('revision',t.revision);
       const result = await mutate(data); state = result; filter = 'planning'; render(); notice(result.message); editTrip(state.trips.find(x => x.id === t.id));
     } catch(error) { notice(error.message, true); await load(); }
     finally { busy = false; document.querySelectorAll('[data-trip]').forEach(b => b.disabled = false); }
@@ -280,7 +280,7 @@
     const t = state.trips.find(t => t.id === button.dataset.retryMail); if (!t) return;
     busy = true; button.disabled = true;
     try { const data = new FormData();
-        data.set('previewKind', form.dataset.kind); data.set('action','retry_mail'); data.set('id',t.id); data.set('revision',t.revision); const result = await mutate(data); state = result; render(); notice(result.message, !!state.trips.find(x => x.id === t.id)?.mailError); }
+      data.set('action','retry_mail'); data.set('id',t.id); data.set('revision',t.revision); const result = await mutate(data); state = result; render(); notice(result.message, !!state.trips.find(x => x.id === t.id)?.mailError); }
     catch (error) { notice(error.message, true); } finally { busy = false; button.disabled = false; }
   });
   $('#trips').addEventListener('click', event => { const button = event.target.closest('[data-trip]'); if (button) editTrip(state.trips.find(t => t.id === button.dataset.trip)); });

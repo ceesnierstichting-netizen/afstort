@@ -36,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit();
             }
             twofa_start_pending_login($user);
-            if (twofa_has_completed_setup($user)) {
+            if (twofa_has_completed_setup($user) || filter_var($user['email'] ?? '', FILTER_VALIDATE_EMAIL)) {
                 header("Location: 2fa_verify.php");
             } else {
                 header("Location: 2fa_setup.php");
@@ -230,7 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <input type="email" id="email" name="email" required autocomplete="email" value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>" autofocus>
                 <label for="password">Wachtwoord</label>
                 <input type="password" id="password" name="password" required autocomplete="current-password">
-                <div class="info">Na je wachtwoord volgt een controlecode. Je kunt die ontvangen via je authenticator-app of per mail.</div>
+                <div class="info">Na je wachtwoord sturen we automatisch een inlogcode per e-mail. Je kunt ook je gekoppelde authenticator-app gebruiken.</div>
                 <input type="submit" value="Inloggen">
             </form>
             <div class="forgot-password">

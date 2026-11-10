@@ -4,10 +4,11 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const elements = new Map();
 const handlers = new Map();
+const tripClickHandlers = [];
 const element = selector => {
   if (!elements.has(selector)) elements.set(selector, {
     content: 'csrf', innerHTML: '', textContent: '', open: false, disabled: false,
-    addEventListener(type, fn) { handlers.set(selector + ':' + type, fn); }, closest() { return null; }, showModal() { this.open = true; }, close() { this.open = false; }, focus() {}
+    addEventListener(type, fn) { handlers.set(selector + ':' + type, fn); if (selector === '#trips' && type === 'click') tripClickHandlers.push(fn); }, closest() { return null; }, showModal() { this.open = true; }, close() { this.open = false; }, focus() {}
   });
   return elements.get(selector);
 };
@@ -24,7 +25,7 @@ const context = {
 vm.createContext(context);
 const source = fs.readFileSync(require('node:path').join(__dirname, '../live2/live.js'), 'utf8');
 vm.runInContext(source.replace(/  load\(\);\s*\}\)\(\);\s*$/, `
-  globalThis.ui = { render, create, report, preferences, showDone, load, refreshIfIdle,
+  globalThis.ui = { render, create, report, preferences, showDone, load, refreshIfIdle, claim,
     setState(value) { state = value; }, getState() { return state; },
     setView(value) { view = value; }, setUser(value) { Object.assign(user, value); },
     setBusy(value) { busy = value; }, setDirty(value) { dirty = value; }
@@ -155,5 +156,25 @@ context.ui.setState(state);
   pendingFetch({ ok: true, text: async () => JSON.stringify({ ...state, trips: [] }) });
   await fresh;
   assert.equal(context.ui.getState().trips.length, 0);
+  context.FormData = Map;
+  const tripButton = { disabled: false };
+  context.document.querySelectorAll = () => [tripButton];
+  const actions = [];
+  context.fetch = async (url, options) => {
+    assert.match(url, /action=mutate/);
+    actions.push(options.body.get('action'));
+    assert.equal(options.body.get('id'), trip.id);
+    assert.equal(options.body.get('revision'), trip.revision);
+    assert.equal(options.body.has('previewKind'), false);
+    return { ok: true, text: async () => JSON.stringify({ ...state, message: 'Opgeslagen' }) };
+  };
+  context.ui.setState(state);
+  await context.ui.claim(trip);
+  assert.deepEqual(actions, ['claim']);
+  assert.equal(tripButton.disabled, false);
+  const retryButton = { dataset: {retryMail: trip.id}, disabled: false };
+  for (const handler of tripClickHandlers) await handler({target:{closest:selector=>selector === '[data-retry-mail]' ? retryButton : null}});
+  assert.deepEqual(actions, ['claim', 'retry_mail']);
+  assert.equal(retryButton.disabled, false);
   console.log('Live portal UI checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

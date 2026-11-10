@@ -26,21 +26,11 @@ if (!$hasAuthenticator && isset($_POST['method']) && $_POST['method'] === 'authe
 
 $error = "";
 $notice = "";
-$mode = $hasAuthenticator ? "authenticator" : "mail";
+$mode = $hasAuthenticator && ($_GET['method'] ?? '') === 'authenticator' ? 'authenticator' : 'mail';
+$isGet = $_SERVER['REQUEST_METHOD'] === 'GET';
+$resendRequested = $isGet && ($_GET['send'] ?? '') === 'mail';
 
-if (!$hasAuthenticator && empty($_SESSION['twofa_email_code_hash']) && twofa_can_send_email_code($waitSeconds)) {
-    $emailCode = twofa_generate_email_code();
-    twofa_store_email_code($emailCode);
-
-    if (twofa_send_email_code($user['email'], $emailCode, $user['naam'] ?? '')) {
-        $notice = "We hebben een code gestuurd naar " . twofa_mask_email($user['email']) . ".";
-    } else {
-        twofa_clear_email_code();
-        $error = "De code kon niet per mail worden verzonden. Probeer het later opnieuw.";
-    }
-}
-
-if (isset($_GET['send']) && $_GET['send'] === 'mail') {
+if ($isGet && ($resendRequested || ($mode === 'mail' && empty($_SESSION['twofa_email_code_hash'])))) {
     $mode = "mail";
     $waitSeconds = 0;
 
@@ -61,6 +51,10 @@ if (isset($_GET['send']) && $_GET['send'] === 'mail') {
             $mode = $hasAuthenticator ? "authenticator" : "mail";
         }
     }
+}
+
+if ($mode === 'mail' && $notice === '' && $error === '' && !empty($_SESSION['twofa_email_code_hash'])) {
+    $notice = "We hebben een code gestuurd naar " . twofa_mask_email($user['email']) . ".";
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !authRateAllowed($pdo, '2fa', $user['id'])) {
@@ -332,7 +326,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !authRateAllowed($pdo, '2fa', $user
             <p class="fallback">
                 Kies hoe je wilt inloggen:
                 <?php if ($mode === 'mail'): ?>
-                    <a href="2fa_verify.php">gebruik je authenticator-app</a>
+                    <a href="2fa_verify.php?method=authenticator">gebruik je authenticator-app</a>
                     of
                     <a href="2fa_verify.php?send=mail">ontvang opnieuw een code per mail</a>.
                 <?php else: ?>
@@ -342,7 +336,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !authRateAllowed($pdo, '2fa', $user
             </p>
         <?php else: ?>
             <p class="fallback">
-                Geen authenticator-app? Je kunt hier gewoon inloggen met een code per mail.
+                Geen code ontvangen? <a href="2fa_verify.php?send=mail">Ontvang opnieuw een code per mail</a>.
             </p>
             <p class="fallback">
                 Wil je later toch liever een authenticator-app gebruiken? Log eerst in met je code per mail en kies daarna bovenaan "Authenticator-app opnieuw koppelen".
