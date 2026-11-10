@@ -2,9 +2,10 @@
 require_once('session.php');
 require_once('config.php');
 require_once('twofa.php');
+require_once('auth_rate_limit.php');
 
 if (isset($_SESSION['fullAccess']) && !empty($_SESSION['twofa_verified'])) {
-    header("Location: index.php");
+    header("Location: index2.php");
     exit();
 }
 
@@ -19,20 +20,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($email) || empty($password)) {
         $error = "Vul zowel e-mail als wachtwoord in.";
+    } elseif (!authRateAllowed($pdo, 'login', $email)) {
+        http_response_code(429);
+        $error = 'Te veel mislukte pogingen. Probeer het over 15 minuten opnieuw.';
     } else {
         $stmt = $pdo->prepare("SELECT * FROM chauffeurs WHERE email = ?");
         $stmt->execute([$email]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($user && password_verify($password, $user['wachtwoord'])) {
+            authRateSuccess($pdo, 'login', $email);
+            if (twofa_remember_valid($_COOKIE[TWOFA_REMEMBER_COOKIE] ?? null, $user, $twofaRememberKey, time())) {
+                twofa_finish_login($user);
+                header("Location: index2.php");
+                exit();
+            }
             twofa_start_pending_login($user);
-            if (!empty($user['twofa_enabled']) && !empty($user['twofa_secret'])) {
+            if (twofa_has_completed_setup($user) || filter_var($user['email'] ?? '', FILTER_VALIDATE_EMAIL)) {
                 header("Location: 2fa_verify.php");
             } else {
                 header("Location: 2fa_setup.php");
             }
             exit();
         } else {
+            authRateFailure($pdo, 'login', $email);
             $error = "Onjuist e-mail of wachtwoord.";
         }
     }
@@ -219,7 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <input type="email" id="email" name="email" required autocomplete="email" value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>" autofocus>
                 <label for="password">Wachtwoord</label>
                 <input type="password" id="password" name="password" required autocomplete="current-password">
-                <div class="info">Na je wachtwoord volgt een controlecode. Je kunt die ontvangen via je authenticator-app of per mail.</div>
+                <div class="info">Na je wachtwoord sturen we automatisch een inlogcode per e-mail. Je kunt ook je gekoppelde authenticator-app gebruiken.</div>
                 <input type="submit" value="Inloggen">
             </form>
             <div class="forgot-password">

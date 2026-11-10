@@ -12,15 +12,9 @@ refreshCurrentUserAccess($pdo);
 $fullAccess = !empty($_SESSION['fullAccess']);
 $username = $_SESSION['username'] ?? '';
 
-if ($fullAccess) {
-    header("Location: index.php");
-    exit();
-}
-
-if (isset($_GET['view']) && $_GET['view'] === 'desktop') {
-    header("Location: index.php");
-    exit();
-}
+header('Cache-Control: no-store');
+header('Location: index2.php');
+exit;
 ?>
 <!DOCTYPE html>
 <html lang="nl">
@@ -347,6 +341,7 @@ if (isset($_GET['view']) && $_GET['view'] === 'desktop') {
                 </div>
             </div>
             <div class="hero-actions">
+                <a class="secondary-link" href="2fa_setup.php?authenticator=1">Authenticator-app opnieuw koppelen</a>
                 <a class="secondary-link" href="logout.php">Uitloggen</a>
             </div>
             <div class="summary">

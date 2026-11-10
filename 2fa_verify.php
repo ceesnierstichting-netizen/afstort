@@ -2,6 +2,7 @@
 require_once('session.php');
 require_once('config.php');
 require_once('twofa.php');
+require_once('auth_rate_limit.php');
 
 $user = twofa_get_pending_user($pdo);
 if (!$user) {
@@ -25,21 +26,11 @@ if (!$hasAuthenticator && isset($_POST['method']) && $_POST['method'] === 'authe
 
 $error = "";
 $notice = "";
-$mode = $hasAuthenticator ? "authenticator" : "mail";
+$mode = $hasAuthenticator && ($_GET['method'] ?? '') === 'authenticator' ? 'authenticator' : 'mail';
+$isGet = $_SERVER['REQUEST_METHOD'] === 'GET';
+$resendRequested = $isGet && ($_GET['send'] ?? '') === 'mail';
 
-if (!$hasAuthenticator && empty($_SESSION['twofa_email_code_hash']) && twofa_can_send_email_code($waitSeconds)) {
-    $emailCode = twofa_generate_email_code();
-    twofa_store_email_code($emailCode);
-
-    if (twofa_send_email_code($user['email'], $emailCode, $user['naam'] ?? '')) {
-        $notice = "We hebben een code gestuurd naar " . twofa_mask_email($user['email']) . ".";
-    } else {
-        twofa_clear_email_code();
-        $error = "De code kon niet per mail worden verzonden. Probeer het later opnieuw.";
-    }
-}
-
-if (isset($_GET['send']) && $_GET['send'] === 'mail') {
+if ($isGet && ($resendRequested || ($mode === 'mail' && empty($_SESSION['twofa_email_code_hash'])))) {
     $mode = "mail";
     $waitSeconds = 0;
 
@@ -62,7 +53,14 @@ if (isset($_GET['send']) && $_GET['send'] === 'mail') {
     }
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($mode === 'mail' && $notice === '' && $error === '' && !empty($_SESSION['twofa_email_code_hash'])) {
+    $notice = "We hebben een code gestuurd naar " . twofa_mask_email($user['email']) . ".";
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !authRateAllowed($pdo, '2fa', $user['id'])) {
+    http_response_code(429);
+    $error = 'Te veel mislukte pogingen. Probeer het over 15 minuten opnieuw.';
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $requestedMode = ($_POST['method'] ?? $mode) === 'mail' ? 'mail' : 'authenticator';
     $mode = (!$hasAuthenticator || $requestedMode === 'mail') ? 'mail' : 'authenticator';
     $code = trim($_POST['twofa_code'] ?? $_POST['code'] ?? '');
@@ -74,8 +72,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($mode === 'mail') {
         $emailCodeChecked = true;
         if (twofa_verify_email_code($code, $emailMessage)) {
+            authRateSuccess($pdo, '2fa', $user['id']);
+            twofa_confirm_email_setup($pdo, $user);
+            if (!empty($_POST['remember_today'])) {
+                twofa_remember_today($user, $twofaRememberKey);
+            }
             twofa_finish_login($user);
-            header("Location: index.php");
+            header("Location: index2.php");
             exit();
         }
     }
@@ -86,8 +89,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $stmt = $pdo->prepare("UPDATE chauffeurs SET twofa_last_used_step = ? WHERE id = ?");
             $stmt->execute([$matchedStep, (int)$user['id']]);
+            authRateSuccess($pdo, '2fa', $user['id']);
+            if (!empty($_POST['remember_today'])) {
+                twofa_remember_today($user, $twofaRememberKey);
+            }
             twofa_finish_login($user);
-            header("Location: index.php");
+            header("Location: index2.php");
             exit();
         }
     } else {
@@ -95,16 +102,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (twofa_verify_recovery_code($code, $user['twofa_recovery_codes'] ?? null, $updatedRecoveryCodes)) {
             $stmt = $pdo->prepare("UPDATE chauffeurs SET twofa_recovery_codes = ? WHERE id = ?");
             $stmt->execute([$updatedRecoveryCodes, (int)$user['id']]);
+            authRateSuccess($pdo, '2fa', $user['id']);
+            if (!empty($_POST['remember_today'])) {
+                twofa_remember_today($user, $twofaRememberKey);
+            }
             twofa_finish_login($user);
-            header("Location: index.php");
+            header("Location: index2.php");
             exit();
         }
 
         if (!$emailCodeChecked && preg_match('/^\D*\d\D*\d\D*\d\D*\d\D*\d\D*\d\D*$/', $code)) {
             $emailCodeChecked = true;
             if (twofa_verify_email_code($code, $emailMessage)) {
+                authRateSuccess($pdo, '2fa', $user['id']);
+                twofa_confirm_email_setup($pdo, $user);
+                if (!empty($_POST['remember_today'])) {
+                    twofa_remember_today($user, $twofaRememberKey);
+                }
                 twofa_finish_login($user);
-                header("Location: index.php");
+                header("Location: index2.php");
                 exit();
             }
         }
@@ -115,6 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ? "De controlecode klopt niet. Je kunt ook een herstelcode gebruiken."
                 : "De controlecode klopt niet.");
     }
+    authRateFailure($pdo, '2fa', $user['id']);
 }
 ?>
 <!DOCTYPE html>
@@ -298,6 +315,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 data-bwignore="true"
                 data-form-type="other"
                 autofocus>
+            <label for="remember_today" style="display: flex; align-items: center; gap: 8px; margin: 14px 0; font-weight: normal;">
+                <input type="checkbox" id="remember_today" name="remember_today" value="1" <?php echo !empty($_POST['remember_today']) ? 'checked' : ''; ?>>
+                Vraag vandaag niet opnieuw om een 2FA-code op deze browser
+            </label>
             <button type="submit">Inloggen</button>
         </form>
 
@@ -305,7 +326,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p class="fallback">
                 Kies hoe je wilt inloggen:
                 <?php if ($mode === 'mail'): ?>
-                    <a href="2fa_verify.php">gebruik je authenticator-app</a>
+                    <a href="2fa_verify.php?method=authenticator">gebruik je authenticator-app</a>
                     of
                     <a href="2fa_verify.php?send=mail">ontvang opnieuw een code per mail</a>.
                 <?php else: ?>
@@ -315,11 +336,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </p>
         <?php else: ?>
             <p class="fallback">
-                Geen authenticator-app? Je kunt hier gewoon inloggen met een code per mail.
+                Geen code ontvangen? <a href="2fa_verify.php?send=mail">Ontvang opnieuw een code per mail</a>.
             </p>
             <p class="fallback">
-                Wil je later toch liever een authenticator-app gebruiken?
-                <a href="2fa_setup.php">Stel die dan hier in</a>.
+                Wil je later toch liever een authenticator-app gebruiken? Log eerst in met je code per mail en kies daarna bovenaan "Authenticator-app opnieuw koppelen".
             </p>
         <?php endif; ?>
 

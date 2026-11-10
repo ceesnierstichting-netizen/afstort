@@ -1,0 +1,176 @@
+<?php
+require_once __DIR__ . '/app_helpers.php';
+require_once __DIR__ . '/chauffeur_profiel.php';
+
+/**
+ * Bereken afstand in kilometer tussen twee coordinaten.
+ */
+function haversineDistanceKm($lat1, $lon1, $lat2, $lon2) {
+    $earthRadiusKm = 6371.0;
+
+    $dLat = deg2rad($lat2 - $lat1);
+    $dLon = deg2rad($lon2 - $lon1);
+
+    $a = sin($dLat / 2) * sin($dLat / 2)
+       + cos(deg2rad($lat1)) * cos(deg2rad($lat2))
+       * sin($dLon / 2) * sin($dLon / 2);
+
+    $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+    return $earthRadiusKm * $c;
+}
+
+/**
+ * pc6 (1234AB) uit een string halen als fallback.
+ */
+function extractPostcode6_local($str) {
+    if (!$str) return '';
+    if (preg_match('/([0-9]{4})\s*([A-Za-z]{2})/', trim($str), $m)) {
+        return strtoupper($m[1] . $m[2]);
+    }
+    return '';
+}
+
+function isValidCoord($lat, $lon) {
+    return is_numeric($lat) && is_numeric($lon)
+        && $lat >= -90 && $lat <= 90
+        && $lon >= -180 && $lon <= 180;
+}
+
+
+function selectNearestChauffeur(PDO $pdo, int $ritId, string $excludeName = ''): array {
+    // Optioneel: chauffeur uitsluiten (bijvoorbeeld degene die de rit afwijst)
+    
+    $excludedNames = getUitgeslotenChauffeursVoorRit($pdo, $ritId);
+    if ($excludeName !== '') {
+        $excludedNames[] = $excludeName;
+    }
+    $excludedNames = array_values(array_unique(array_filter(array_map('trim', $excludedNames))));
+    
+    // ---- 2. Rit ophalen ----
+    $stmt = $pdo->prepare("\n    SELECT id, collectegebied, postcodePlaats, lat, lon\n    FROM ritten\n    WHERE id = :id\n");
+    $stmt->execute(array(':id' => $ritId));
+    $rit = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$rit) {
+        return array('status' => 'error', 'message' => 'Rit niet gevonden.');
+    }
+    
+    $debug = array();
+    
+    // ---- 3. Rit-locatie bepalen ----
+    $ritPostcodePlaats = isset($rit['postcodePlaats']) ? $rit['postcodePlaats'] : '';
+    
+    if (function_exists('extractPostcode6')) {
+        $pc6Rit = extractPostcode6($ritPostcodePlaats);
+    } else {
+        $pc6Rit = extractPostcode6_local($ritPostcodePlaats);
+    }
+    
+    $ritLat = isset($rit['lat']) ? $rit['lat'] : null;
+    $ritLon = isset($rit['lon']) ? $rit['lon'] : null;
+    
+    if (!isValidCoord($ritLat, $ritLon) && $pc6Rit && function_exists('geocodePostcode')) {
+        list($tmpLat, $tmpLon) = geocodePostcode($pc6Rit);
+        $ritLat = $tmpLat;
+        $ritLon = $tmpLon;
+        $debug[] = 'Rit-coordinaten opnieuw bepaald via geocode op pc6.';
+    }
+    
+    if (!isValidCoord($ritLat, $ritLon)) {
+        return array(
+            'status'  => 'error',
+            'message' => 'Rit heeft geen geldige coordinaten. Controleer postcode (pc6) en geocoding.'
+        );
+    }
+    
+    $ritLat = (float)$ritLat;
+    $ritLon = (float)$ritLon;
+    
+    // ---- 4. Chauffeurs ophalen ----
+    $stmt = $pdo->query("\n    SELECT id, naam, email, postcode, lat, lon\n    FROM chauffeurs\n    WHERE is_medewerker = 0 AND naam <> 'Admin'\n      AND email <> ''\n");
+    $chauffeurs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    if (!$chauffeurs) {
+        return array('status' => 'error', 'message' => 'Geen chauffeurs gevonden.');
+    }
+    
+    // ---- 5. Voor alle chauffeurs: km-afstand berekenen ----
+    $nearest = null;
+    $nearestScore = null;
+    $yearQuery = $pdo->prepare('SELECT collectejaar FROM ritten WHERE id = ?');
+    $yearQuery->execute([$ritId]);
+    $collectejaar = (int)$yearQuery->fetchColumn();
+    
+    foreach ($chauffeurs as $ch) {
+        $naam = $ch['naam'];
+        if (!chauffeur_beschikbaar($pdo, $naam, $collectejaar)) continue;
+        $email = $ch['email'];
+        $postcode = $ch['postcode'];
+    
+        foreach ($excludedNames as $excludedName) {
+            if (strcasecmp($naam, $excludedName) === 0) {
+                $debug[] = "Chauffeur {$naam} overgeslagen: al eerder aangeboden of expliciet uitgesloten.";
+                continue 2;
+            }
+        }
+    
+        if ($excludeName !== '' && strcasecmp($naam, $excludeName) === 0) {
+            $debug[] = "Chauffeur {$naam} overgeslagen: exclude-parameter.";
+            continue;
+        }
+    
+        if (!$postcode) {
+            $debug[] = "Chauffeur {$naam} overgeslagen: geen postcode.";
+            continue;
+        }
+    
+        if (function_exists('extractPostcode6')) {
+            $pc6Ch = extractPostcode6($postcode);
+        } else {
+            $pc6Ch = extractPostcode6_local($postcode);
+        }
+    
+        $chLat = isset($ch['lat']) ? $ch['lat'] : null;
+        $chLon = isset($ch['lon']) ? $ch['lon'] : null;
+    
+        if (!isValidCoord($chLat, $chLon) && $pc6Ch && function_exists('geocodePostcode')) {
+            list($tmpLat, $tmpLon) = geocodePostcode($pc6Ch);
+            $chLat = $tmpLat;
+            $chLon = $tmpLon;
+        }
+    
+        if (!isValidCoord($chLat, $chLon)) {
+            $debug[] = "Chauffeur {$naam} overgeslagen: geen geldige coordinaten (pc6={$pc6Ch}).";
+            continue;
+        }
+    
+        $km = haversineDistanceKm($ritLat, $ritLon, (float)$chLat, (float)$chLon);
+        $debug[] = "Chauffeur {$naam}: pc6={$pc6Ch}, afstandKm=" . round($km, 2);
+    
+        if ($nearest === null || $km < $nearestScore) {
+            $nearest = array(
+                'naam'  => $naam,
+                'email' => $email,
+                'pc6'   => $pc6Ch,
+            );
+            $nearestScore = $km;
+        }
+    }
+    
+    if ($nearest === null) {
+        return array('status' => 'error', 'message' => 'Geen chauffeur met geldige coordinaten gevonden.');
+    }
+    
+    // ---- 6. Resultaat teruggeven ----
+    return array(
+        'status'         => 'ok',
+        'chauffeurNaam'  => $nearest['naam'],
+        'chauffeurEmail' => $nearest['email'],
+        'afstandKm'      => round($nearestScore, 2),
+        'collectegebied' => isset($rit['collectegebied']) ? $rit['collectegebied'] : '',
+        'postcodePlaats' => $ritPostcodePlaats,
+        'pc6Rit'         => $pc6Rit,
+        'debug'          => $debug
+    );
+}

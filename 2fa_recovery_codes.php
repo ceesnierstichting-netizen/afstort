@@ -11,7 +11,7 @@ $codes = $_SESSION['new_recovery_codes'] ?? null;
 unset($_SESSION['new_recovery_codes']);
 
 if (!is_array($codes) || count($codes) === 0) {
-    header("Location: index.php");
+    header("Location: index2.php");
     exit();
 }
 ?>
@@ -131,7 +131,7 @@ if (!is_array($codes) || count($codes) === 0) {
 
         <div class="actions">
             <button type="button" onclick="window.print()">Printen</button>
-            <a class="button" href="index.php">Naar dashboard</a>
+            <a class="button" href="index2.php">Naar het afstortportaal</a>
         </div>
     </main>
 </body>
